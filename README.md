@@ -144,6 +144,11 @@ CORS_MAX_AGE=86400
 - 首次没有快照且上游失败时返回 503。
 - `withRelated=true` 会规范化为 `variant_key = v1|withRelated=1`。
 - 默认刷新周期：普通弹幕 24 小时，空 `comments` 1 小时，刷新失败 30 分钟后重试。
+- 弹幕接口会返回调试响应头：
+  - `X-Danmaku-Cache`: `redis`、`postgres`、`upstream` 或 `stale`
+  - `X-Danmaku-Variant`: 当前 `variant_key`
+  - `X-Danmaku-Fetched-At`: 快照获取时间
+  - `X-Danmaku-Next-Refresh-At`: 下一次允许刷新时间
 
 #### 方式二：使用预编译的二进制文件
 1. 下载对应平台的二进制文件

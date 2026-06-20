@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"log"
 	"net/http"
+	"time"
 )
 
 // dandanplayService 全局服务实例
@@ -82,7 +83,7 @@ func SearchEpisodes(c *gin.Context) {
 // 支持缓存弹幕数据
 func GetDanmaku(c *gin.Context) {
 	if commentService != nil {
-		data, err := commentService.GetComments(c.Request.Context(), c.Param("id"), c.Request.URL.Query())
+		result, err := commentService.GetComments(c.Request.Context(), c.Param("id"), c.Request.URL.Query())
 		if err != nil {
 			log.Printf("弹幕服务请求失败 - ID: %s, Error: %v", c.Param("id"), err)
 			status := http.StatusInternalServerError
@@ -92,7 +93,8 @@ func GetDanmaku(c *gin.Context) {
 			c.JSON(status, gin.H{"error": err.Error()})
 			return
 		}
-		c.Data(http.StatusOK, "application/json", data)
+		setDanmakuDebugHeaders(c, result)
+		c.Data(http.StatusOK, "application/json", result.Payload)
 		return
 	}
 
@@ -127,6 +129,17 @@ func GetDanmaku(c *gin.Context) {
 	log.Printf("API结果已缓存 - Key: %s", cacheKey)
 
 	c.Data(http.StatusOK, "application/json", data)
+}
+
+func setDanmakuDebugHeaders(c *gin.Context, result *danmakuService.CommentResult) {
+	c.Header("X-Danmaku-Cache", result.CacheStatus)
+	c.Header("X-Danmaku-Variant", result.VariantKey)
+	if !result.FetchedAt.IsZero() {
+		c.Header("X-Danmaku-Fetched-At", result.FetchedAt.UTC().Format(time.RFC3339))
+	}
+	if !result.NextRefreshAt.IsZero() {
+		c.Header("X-Danmaku-Next-Refresh-At", result.NextRefreshAt.UTC().Format(time.RFC3339))
+	}
 }
 
 // GetBangumiByBgmtvSubjectID 通过Bangumi.tv subjectId获取弹弹Play番剧详情

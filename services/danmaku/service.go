@@ -32,6 +32,14 @@ type UpstreamClient interface {
 	FetchComments(ctx context.Context, dandanEpisodeID string, query string) ([]byte, error)
 }
 
+type CommentResult struct {
+	Payload       []byte
+	CacheStatus   string
+	VariantKey    string
+	FetchedAt     time.Time
+	NextRefreshAt time.Time
+}
+
 type CommentServiceOptions struct {
 	Cache              SnapshotCache
 	Store              SnapshotStore
@@ -97,7 +105,7 @@ func (s *CommentService) Close() {
 	})
 }
 
-func (s *CommentService) GetComments(ctx context.Context, dandanEpisodeID string, query url.Values) ([]byte, error) {
+func (s *CommentService) GetComments(ctx context.Context, dandanEpisodeID string, query url.Values) (*CommentResult, error) {
 	episodeID, err := strconv.ParseInt(dandanEpisodeID, 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid dandan episode id: %w", err)
@@ -112,8 +120,9 @@ func (s *CommentService) GetComments(ctx context.Context, dandanEpisodeID string
 		}
 		if !snapshot.NextRefreshAt.After(s.now()) {
 			s.enqueueRefresh(episodeID, dandanEpisodeID, variant)
+			return commentResult(payload, "stale", snapshot), nil
 		}
-		return payload, nil
+		return commentResult(payload, "redis", snapshot), nil
 	}
 
 	snapshot, err := s.store.Get(ctx, episodeID, variantKey)
@@ -125,8 +134,9 @@ func (s *CommentService) GetComments(ctx context.Context, dandanEpisodeID string
 		}
 		if !snapshot.NextRefreshAt.After(s.now()) {
 			s.enqueueRefresh(episodeID, dandanEpisodeID, variant)
+			return commentResult(payload, "stale", snapshot), nil
 		}
-		return payload, nil
+		return commentResult(payload, "postgres", snapshot), nil
 	}
 	if !errors.Is(err, storage.ErrSnapshotNotFound) {
 		return nil, err
@@ -135,15 +145,31 @@ func (s *CommentService) GetComments(ctx context.Context, dandanEpisodeID string
 	return s.firstLoad(ctx, episodeID, dandanEpisodeID, variant)
 }
 
-func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episodeIDString string, variant Variant) ([]byte, error) {
+func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episodeIDString string, variant Variant) (*CommentResult, error) {
 	key := fmt.Sprintf("%d:%s", episodeID, variant.Key())
 	result, err, _ := s.loadGroup.Do(key, func() (interface{}, error) {
 		if snapshot, status, err := s.cache.Get(ctx, episodeID, variant.Key()); err == nil && status == CacheHit {
-			return snapshotPayload(snapshot)
+			payload, err := snapshotPayload(snapshot)
+			if err != nil {
+				return nil, err
+			}
+			status := "redis"
+			if !snapshot.NextRefreshAt.After(s.now()) {
+				status = "stale"
+			}
+			return commentResult(payload, status, snapshot), nil
 		}
 		if snapshot, err := s.store.Get(ctx, episodeID, variant.Key()); err == nil {
 			_ = s.cache.Set(ctx, snapshot, s.redisSnapshotTTL)
-			return snapshotPayload(snapshot)
+			payload, err := snapshotPayload(snapshot)
+			if err != nil {
+				return nil, err
+			}
+			status := "postgres"
+			if !snapshot.NextRefreshAt.After(s.now()) {
+				status = "stale"
+			}
+			return commentResult(payload, status, snapshot), nil
 		} else if !errors.Is(err, storage.ErrSnapshotNotFound) {
 			return nil, err
 		}
@@ -160,12 +186,12 @@ func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episode
 			return nil, err
 		}
 		_ = s.cache.Set(ctx, snapshot, s.redisSnapshotTTL)
-		return payload, nil
+		return commentResult(payload, "upstream", snapshot), nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return result.([]byte), nil
+	return result.(*CommentResult), nil
 }
 
 func (s *CommentService) enqueueRefresh(episodeID int64, episodeIDString string, variant Variant) {
@@ -243,5 +269,15 @@ func snapshotPayload(snapshot *storage.Snapshot) ([]byte, error) {
 		return GunzipPayload(snapshot.Payload)
 	default:
 		return nil, fmt.Errorf("unsupported payload encoding: %s", snapshot.PayloadEncoding)
+	}
+}
+
+func commentResult(payload []byte, cacheStatus string, snapshot *storage.Snapshot) *CommentResult {
+	return &CommentResult{
+		Payload:       payload,
+		CacheStatus:   cacheStatus,
+		VariantKey:    snapshot.VariantKey,
+		FetchedAt:     snapshot.FetchedAt,
+		NextRefreshAt: snapshot.NextRefreshAt,
 	}
 }

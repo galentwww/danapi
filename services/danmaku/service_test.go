@@ -64,13 +64,19 @@ func TestCommentServiceRedisHitReturnsCachedPayload(t *testing.T) {
 		Now:                func() time.Time { return now },
 	})
 
-	got, err := service.GetComments(context.Background(), "123", mustQuery(t, "withRelated=true"))
+	result, err := service.GetComments(context.Background(), "123", mustQuery(t, "withRelated=true"))
 	if err != nil {
 		t.Fatalf("GetComments returned error: %v", err)
 	}
 
-	if string(got) != string(body) {
-		t.Fatalf("payload = %s", got)
+	if string(result.Payload) != string(body) {
+		t.Fatalf("payload = %s", result.Payload)
+	}
+	if result.CacheStatus != "redis" {
+		t.Fatalf("CacheStatus = %q", result.CacheStatus)
+	}
+	if result.VariantKey != "v1|withRelated=1" {
+		t.Fatalf("VariantKey = %q", result.VariantKey)
 	}
 	if store.getCalls != 0 {
 		t.Fatalf("store get calls = %d", store.getCalls)
@@ -98,13 +104,16 @@ func TestCommentServicePostgresHitRefillsRedis(t *testing.T) {
 		Now:                func() time.Time { return now },
 	})
 
-	got, err := service.GetComments(context.Background(), "123", mustQuery(t, "withRelated=true"))
+	result, err := service.GetComments(context.Background(), "123", mustQuery(t, "withRelated=true"))
 	if err != nil {
 		t.Fatalf("GetComments returned error: %v", err)
 	}
 
-	if string(got) != string(body) {
-		t.Fatalf("payload = %s", got)
+	if string(result.Payload) != string(body) {
+		t.Fatalf("payload = %s", result.Payload)
+	}
+	if result.CacheStatus != "postgres" {
+		t.Fatalf("CacheStatus = %q", result.CacheStatus)
 	}
 	if len(cache.setSnapshots) != 1 {
 		t.Fatalf("cache set count = %d", len(cache.setSnapshots))
@@ -142,13 +151,16 @@ func TestCommentServiceFirstLoadWritesStoreBeforeRedis(t *testing.T) {
 		Now:                func() time.Time { return now },
 	})
 
-	got, err := service.GetComments(context.Background(), "123", mustQuery(t, "withRelated=true"))
+	result, err := service.GetComments(context.Background(), "123", mustQuery(t, "withRelated=true"))
 	if err != nil {
 		t.Fatalf("GetComments returned error: %v", err)
 	}
 
-	if string(got) != string(body) {
-		t.Fatalf("payload = %s", got)
+	if string(result.Payload) != string(body) {
+		t.Fatalf("payload = %s", result.Payload)
+	}
+	if result.CacheStatus != "upstream" {
+		t.Fatalf("CacheStatus = %q", result.CacheStatus)
 	}
 	if !reflect.DeepEqual(ops, []string{"store", "cache"}) {
 		t.Fatalf("ops = %#v", ops)
@@ -205,12 +217,15 @@ func TestCommentServiceStaleSnapshotReturnsWhileRefreshFails(t *testing.T) {
 	})
 	defer service.Close()
 
-	got, err := service.GetComments(context.Background(), "123", mustQuery(t, "withRelated=true"))
+	result, err := service.GetComments(context.Background(), "123", mustQuery(t, "withRelated=true"))
 	if err != nil {
 		t.Fatalf("GetComments returned error: %v", err)
 	}
-	if string(got) != string(body) {
-		t.Fatalf("payload = %s", got)
+	if string(result.Payload) != string(body) {
+		t.Fatalf("payload = %s", result.Payload)
+	}
+	if result.CacheStatus != "stale" {
+		t.Fatalf("CacheStatus = %q", result.CacheStatus)
 	}
 
 	select {
