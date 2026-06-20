@@ -22,6 +22,15 @@ type Configuration struct {
 	DanmakuCacheDuration time.Duration // 弹幕数据的缓存时间
 	AppId                string        // API鉴权AppId
 	AppSecret            string        // API鉴权AppSecret
+	DatabaseURL          string        // PostgreSQL连接字符串
+
+	// 弹幕快照刷新配置
+	RedisSnapshotTTL             time.Duration // Redis热快照驻留时间
+	DefaultRefreshInterval       time.Duration // 默认上游刷新间隔
+	EmptyCommentsRefreshInterval time.Duration // 空弹幕刷新间隔
+	RefreshFailureRetryInterval  time.Duration // 刷新失败重试间隔
+	RefreshQueueSize             int           // 后台刷新队列容量
+	RefreshWorkerCount           int           // 后台刷新worker数量
 
 	// CORS 相关配置
 	CORSAllowOrigins     string // 允许的来源，多个用英文逗号分隔，支持 * 与 *.example.com
@@ -98,6 +107,14 @@ func LoadConfig() error {
 		DanmakuCacheDuration: parseDuration("DANMAKU_CACHE_DURATION", 30*time.Minute), // 默认30分钟
 		AppId:                os.Getenv("APP_ID"),
 		AppSecret:            os.Getenv("APP_SECRET"),
+		DatabaseURL:          os.Getenv("DATABASE_URL"),
+
+		RedisSnapshotTTL:             parseDuration("REDIS_SNAPSHOT_TTL", 48*time.Hour),
+		DefaultRefreshInterval:       parseDuration("DEFAULT_REFRESH_INTERVAL", 24*time.Hour),
+		EmptyCommentsRefreshInterval: parseDuration("EMPTY_COMMENTS_REFRESH_INTERVAL", 1*time.Hour),
+		RefreshFailureRetryInterval:  parseDuration("REFRESH_FAILURE_RETRY_INTERVAL", 30*time.Minute),
+		RefreshQueueSize:             getEnvInt("REFRESH_QUEUE_SIZE", 100),
+		RefreshWorkerCount:           getEnvInt("REFRESH_WORKER_COUNT", 2),
 
 		CORSAllowOrigins:     getEnvDefault("CORS_ALLOW_ORIGINS", "*"),
 		CORSAllowMethods:     getEnvDefault("CORS_ALLOW_METHODS", "GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD"),

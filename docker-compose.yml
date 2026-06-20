@@ -7,10 +7,13 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     environment:
       DANDANPLAY_BASE_URL: ${DANDANPLAY_BASE_URL:-https://api.dandanplay.net}
       APP_ID: ${APP_ID:-}
       APP_SECRET: ${APP_SECRET:-}
+      DATABASE_URL: ${DATABASE_URL:-postgres://middleware:middleware_password@postgres:5432/dandanplay_middleware?sslmode=disable}
       REDIS_HOST: redis
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
@@ -18,6 +21,12 @@ services:
       SERVER_PORT: ${SERVER_PORT:-8080}
       SEARCH_CACHE_DURATION: ${SEARCH_CACHE_DURATION:-3600}
       DANMAKU_CACHE_DURATION: ${DANMAKU_CACHE_DURATION:-1800}
+      REDIS_SNAPSHOT_TTL: ${REDIS_SNAPSHOT_TTL:-172800}
+      DEFAULT_REFRESH_INTERVAL: ${DEFAULT_REFRESH_INTERVAL:-86400}
+      EMPTY_COMMENTS_REFRESH_INTERVAL: ${EMPTY_COMMENTS_REFRESH_INTERVAL:-3600}
+      REFRESH_FAILURE_RETRY_INTERVAL: ${REFRESH_FAILURE_RETRY_INTERVAL:-1800}
+      REFRESH_QUEUE_SIZE: ${REFRESH_QUEUE_SIZE:-100}
+      REFRESH_WORKER_COUNT: ${REFRESH_WORKER_COUNT:-2}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
       CORS_ALLOW_METHODS: ${CORS_ALLOW_METHODS:-GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD}
       CORS_ALLOW_HEADERS: ${CORS_ALLOW_HEADERS:-Origin,Content-Type,Accept,Authorization,X-Requested-With}
@@ -39,5 +48,21 @@ services:
       timeout: 3s
       retries: 5
 
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dandanplay_middleware}
+      POSTGRES_USER: ${POSTGRES_USER:-middleware}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-middleware_password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   redis-data:
+  postgres-data:

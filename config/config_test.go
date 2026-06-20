@@ -62,3 +62,45 @@ func TestLoadConfigUsesEnvironmentWhenDotEnvIsMissing(t *testing.T) {
 		t.Fatalf("CORSMaxAge = %d", Config.CORSMaxAge)
 	}
 }
+
+func TestLoadConfigUsesSnapshotDefaults(t *testing.T) {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	t.Setenv("DATABASE_URL", "postgres://middleware:secret@postgres:5432/dandanplay_middleware?sslmode=disable")
+
+	if err := LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig returned error without .env: %v", err)
+	}
+
+	if Config.DatabaseURL != "postgres://middleware:secret@postgres:5432/dandanplay_middleware?sslmode=disable" {
+		t.Fatalf("DatabaseURL = %q", Config.DatabaseURL)
+	}
+	if Config.RedisSnapshotTTL != 48*time.Hour {
+		t.Fatalf("RedisSnapshotTTL = %v", Config.RedisSnapshotTTL)
+	}
+	if Config.DefaultRefreshInterval != 24*time.Hour {
+		t.Fatalf("DefaultRefreshInterval = %v", Config.DefaultRefreshInterval)
+	}
+	if Config.EmptyCommentsRefreshInterval != time.Hour {
+		t.Fatalf("EmptyCommentsRefreshInterval = %v", Config.EmptyCommentsRefreshInterval)
+	}
+	if Config.RefreshFailureRetryInterval != 30*time.Minute {
+		t.Fatalf("RefreshFailureRetryInterval = %v", Config.RefreshFailureRetryInterval)
+	}
+	if Config.RefreshQueueSize != 100 {
+		t.Fatalf("RefreshQueueSize = %d", Config.RefreshQueueSize)
+	}
+	if Config.RefreshWorkerCount != 2 {
+		t.Fatalf("RefreshWorkerCount = %d", Config.RefreshWorkerCount)
+	}
+}
