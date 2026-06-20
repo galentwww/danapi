@@ -41,13 +41,15 @@
 ## 部署指南
 
 ### 1. 准备工作
-- 安装Redis服务器
+- 安装 Docker 和 Docker Compose
 - 准备好弹弹Play的AppId和AppSecret
 
 ### 2. 配置文件
 创建 `.env` 文件并填写以下配置：
 
 ```
+镜像配置
+MIDDLEWARE_IMAGE=ghcr.io/galentwww/danapi:latest
 弹弹Play API基础URL
 DANDANPLAY_BASE_URL=
 API鉴权配置
@@ -89,6 +91,18 @@ CORS_MAX_AGE=86400
 
 #### 方式一：使用 Docker Compose（推荐）
 
+GitHub Actions 会在 `main` 分支和版本 tag 上构建镜像并推送到 GitHub Container Registry：
+
+```text
+ghcr.io/galentwww/danapi:latest
+ghcr.io/galentwww/danapi:main
+ghcr.io/galentwww/danapi:sha-<short-sha>
+```
+
+版本 tag 还会生成对应 tag 镜像，例如 `ghcr.io/galentwww/danapi:v1.0.0`。
+
+如果首次发布后外部机器无法匿名拉取 GHCR 镜像，需要在 GitHub 仓库的 Packages 设置中把该 container package 可见性改为 Public。
+
 1. 复制配置模板：
    ```bash
    cp .env.example .env
@@ -96,6 +110,7 @@ CORS_MAX_AGE=86400
 
 2. 编辑 `.env`，至少填写以下配置：
    ```bash
+   MIDDLEWARE_IMAGE=ghcr.io/galentwww/danapi:latest
    APP_ID=your_app_id
    APP_SECRET=your_app_secret
    ```
@@ -108,9 +123,10 @@ CORS_MAX_AGE=86400
    SERVER_PORT=8080
    ```
 
-3. 构建并启动：
+3. 拉取镜像并启动：
    ```bash
-   docker compose up -d --build
+   docker compose pull
+   docker compose up -d
    ```
 
 4. 查看日志：
@@ -136,6 +152,15 @@ CORS_MAX_AGE=86400
    ```
 
 > 说明：容器内不要求必须存在 `.env` 文件。程序会优先读取 `.env`，如果文件不存在，则直接使用容器环境变量。弹幕快照 PostgreSQL 是中间件独立数据库，不连接核心业务库；payload 会以 gzip 压缩字节保存。
+
+#### 本地开发镜像
+
+如果要在本机源码上构建镜像，可以先构建本地镜像，再用环境变量覆盖 Compose 使用的镜像名：
+
+```bash
+docker build -t dandanplay-middleware:local .
+MIDDLEWARE_IMAGE=dandanplay-middleware:local docker compose up -d
+```
 
 ### 4. 弹幕快照策略
 

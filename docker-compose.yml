@@ -1,8 +1,6 @@
 services:
   middleware:
-    build:
-      context: .
-    image: dandanplay-middleware:local
+    image: ${MIDDLEWARE_IMAGE:-ghcr.io/galentwww/danapi:latest}
     restart: unless-stopped
     depends_on:
       redis:
