@@ -79,6 +79,13 @@ REDIS_SNAPSHOT_TTL=172800
 DEFAULT_REFRESH_INTERVAL=86400
 EMPTY_DANMAKU_REFRESH_INTERVAL=3600
 REFRESH_FAILURE_RETRY_INTERVAL=1800
+REFRESH_ACCESS_WINDOW=86400
+HOT_ACCESS_THRESHOLD=10
+HOT_CHANGED_REFRESH_INTERVAL=7200
+HOT_UNCHANGED_REFRESH_INTERVAL=21600
+NORMAL_CHANGED_REFRESH_INTERVAL=43200
+STABLE_REFRESH_INTERVAL=259200
+ARCHIVED_REFRESH_INTERVAL=604800
 REFRESH_QUEUE_SIZE=100
 REFRESH_WORKER_COUNT=2
 CORS配置
@@ -182,7 +189,18 @@ MIDDLEWARE_IMAGE=dandanplay-middleware:local docker compose up -d
 - 后台刷新按 `dandan_episode_id + variant_key` 去重，worker 执行前会再次检查快照是否已经 fresh，避免并发访问重复打上游。
 - 首次没有快照且上游失败时返回 503。
 - `withRelated=true` 会规范化为 `variant_key = v1|withRelated=1`。
-- 默认刷新周期：普通弹幕 24 小时，空 `comments` 1 小时，刷新失败 30 分钟后重试。
+- 默认刷新周期由访问热度和弹幕变化动态计算，`next_refresh_at` 只表示下一次允许刷新上游的时间；时间到了但没人访问，不会主动消耗弹弹Play请求次数。
+  - 首次没有快照：需要访问弹弹Play一次，成功后写入快照。
+  - 空 `comments`：1 小时后允许刷新。
+  - 24 小时窗口内访问次数 `>= HOT_ACCESS_THRESHOLD` 视为热门，默认阈值 10。
+  - 热门且内容变化：2 小时后允许刷新。
+  - 热门但内容无变化：6 小时后允许刷新。
+  - 普通且内容变化：12 小时后允许刷新。
+  - 普通且内容无变化：24 小时后允许刷新。
+  - 连续 3 次内容无变化：3 天后允许刷新。
+  - 连续 7 次内容无变化：7 天后允许刷新。
+  - 刷新失败：30 分钟后允许重试。
+  - PostgreSQL 快照过期后，当前请求仍先返回旧快照；只有随后排队执行的后台刷新会真实消耗一次上游请求。
 - 弹幕接口会返回调试响应头：
   - `X-Danmaku-Cache`: `redis`、`postgres`、`upstream` 或 `stale`
   - `X-Danmaku-Variant`: 当前 `variant_key`

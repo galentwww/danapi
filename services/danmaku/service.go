@@ -20,6 +20,7 @@ type SnapshotStore interface {
 	Get(ctx context.Context, dandanEpisodeID int64, variantKey string) (*storage.Snapshot, error)
 	Upsert(ctx context.Context, snapshot *storage.Snapshot) error
 	MarkRefreshError(ctx context.Context, dandanEpisodeID int64, variantKey string, retryAt time.Time, message string) error
+	RecordAccess(ctx context.Context, dandanEpisodeID int64, variantKey string, accessedAt time.Time, window time.Duration) error
 }
 
 type SnapshotCache interface {
@@ -121,6 +122,7 @@ func (s *CommentService) GetComments(ctx context.Context, dandanEpisodeID string
 		if err != nil {
 			return nil, err
 		}
+		s.recordAccess(ctx, episodeID, variantKey)
 		if !snapshot.NextRefreshAt.After(s.now()) {
 			_ = s.cache.Delete(ctx, episodeID, variantKey)
 			s.enqueueRefresh(episodeID, dandanEpisodeID, variant)
@@ -135,6 +137,7 @@ func (s *CommentService) GetComments(ctx context.Context, dandanEpisodeID string
 		if err != nil {
 			return nil, err
 		}
+		s.recordAccess(ctx, episodeID, variantKey)
 		if !snapshot.NextRefreshAt.After(s.now()) {
 			s.enqueueRefresh(episodeID, dandanEpisodeID, variant)
 			return commentResult(payload, "stale", snapshot), nil
@@ -157,6 +160,7 @@ func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episode
 			if err != nil {
 				return nil, err
 			}
+			s.recordAccess(ctx, episodeID, variant.Key())
 			status := "redis"
 			if !snapshot.NextRefreshAt.After(s.now()) {
 				status = "stale"
@@ -168,6 +172,7 @@ func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episode
 			if err != nil {
 				return nil, err
 			}
+			s.recordAccess(ctx, episodeID, variant.Key())
 			status := "postgres"
 			if !snapshot.NextRefreshAt.After(s.now()) {
 				status = "stale"
@@ -184,7 +189,7 @@ func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episode
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 		}
-		snapshot, err := s.snapshotFromPayload(episodeID, variant.Key(), payload)
+		snapshot, err := s.snapshotFromPayload(episodeID, variant.Key(), payload, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -246,7 +251,7 @@ func (s *CommentService) refresh(ctx context.Context, request refreshRequest) {
 			_ = s.store.MarkRefreshError(ctx, request.dandanEpisodeID, request.variant.Key(), s.policy.RefreshFailureRetryAt(s.now()), err.Error())
 			return nil, err
 		}
-		snapshot, err = s.snapshotFromPayload(request.dandanEpisodeID, request.variant.Key(), payload)
+		snapshot, err = s.snapshotFromPayload(request.dandanEpisodeID, request.variant.Key(), payload, snapshot)
 		if err != nil {
 			_ = s.store.MarkRefreshError(ctx, request.dandanEpisodeID, request.variant.Key(), s.policy.RefreshFailureRetryAt(s.now()), err.Error())
 			return nil, err
@@ -279,7 +284,11 @@ func (s *CommentService) clearRefreshPending(key string) {
 	delete(s.refreshPending, key)
 }
 
-func (s *CommentService) snapshotFromPayload(episodeID int64, variantKey string, payload []byte) (*storage.Snapshot, error) {
+func (s *CommentService) recordAccess(ctx context.Context, episodeID int64, variantKey string) {
+	_ = s.store.RecordAccess(ctx, episodeID, variantKey, s.now(), s.policy.accessWindow())
+}
+
+func (s *CommentService) snapshotFromPayload(episodeID int64, variantKey string, payload []byte, previous *storage.Snapshot) (*storage.Snapshot, error) {
 	info, err := ValidatePayload(payload)
 	if err != nil {
 		return nil, err
@@ -289,18 +298,40 @@ func (s *CommentService) snapshotFromPayload(episodeID int64, variantKey string,
 		return nil, err
 	}
 	now := s.now()
+	context := RefreshContext{
+		Info:              info,
+		RecentAccessCount: 1,
+	}
+	accessCount := int64(1)
+	recentAccessCount := 1
+	lastAccessedAt := now
+	recentAccessWindowStartedAt := now
+	if previous != nil {
+		context.PreviousContentHash = previous.ContentHash
+		context.PreviousUnchangedStreak = previous.UnchangedStreak
+		context.RecentAccessCount = previous.RecentAccessCount
+		accessCount = previous.AccessCount
+		recentAccessCount = previous.RecentAccessCount
+		lastAccessedAt = previous.LastAccessedAt
+		recentAccessWindowStartedAt = previous.RecentAccessWindowStartedAt
+	}
+	decision := s.policy.NextRefreshDecision(now, context)
 	return &storage.Snapshot{
-		DandanEpisodeID:   episodeID,
-		VariantKey:        variantKey,
-		Payload:           compressed,
-		PayloadEncoding:   "gzip",
-		FetchedAt:         now,
-		NextRefreshAt:     s.policy.NextRefreshAt(now, info),
-		DanmakuCount:      info.DanmakuCount,
-		ContentHash:       info.ContentHash,
-		UnchangedStreak:   0,
-		Version:           1,
-		LastRefreshStatus: "success",
+		DandanEpisodeID:             episodeID,
+		VariantKey:                  variantKey,
+		Payload:                     compressed,
+		PayloadEncoding:             "gzip",
+		FetchedAt:                   now,
+		NextRefreshAt:               decision.NextRefreshAt,
+		DanmakuCount:                info.DanmakuCount,
+		ContentHash:                 info.ContentHash,
+		UnchangedStreak:             decision.UnchangedStreak,
+		Version:                     1,
+		LastRefreshStatus:           "success",
+		LastAccessedAt:              lastAccessedAt,
+		AccessCount:                 accessCount,
+		RecentAccessCount:           recentAccessCount,
+		RecentAccessWindowStartedAt: recentAccessWindowStartedAt,
 	}, nil
 }
 

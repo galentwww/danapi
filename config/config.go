@@ -28,12 +28,19 @@ type Configuration struct {
 	DatabaseURL             string                 // PostgreSQL连接字符串
 
 	// 弹幕快照刷新配置
-	RedisSnapshotTTL            time.Duration // Redis热快照驻留时间
-	DefaultRefreshInterval      time.Duration // 默认上游刷新间隔
-	EmptyDanmakuRefreshInterval time.Duration // 空弹幕刷新间隔
-	RefreshFailureRetryInterval time.Duration // 刷新失败重试间隔
-	RefreshQueueSize            int           // 后台刷新队列容量
-	RefreshWorkerCount          int           // 后台刷新worker数量
+	RedisSnapshotTTL             time.Duration // Redis热快照驻留时间
+	DefaultRefreshInterval       time.Duration // 默认上游刷新间隔
+	EmptyDanmakuRefreshInterval  time.Duration // 空弹幕刷新间隔
+	RefreshFailureRetryInterval  time.Duration // 刷新失败重试间隔
+	RefreshAccessWindow          time.Duration // 热度访问统计窗口
+	HotAccessThreshold           int           // 窗口内热门访问阈值
+	HotChangedRefreshInterval    time.Duration // 热门且内容变化刷新间隔
+	HotUnchangedRefreshInterval  time.Duration // 热门但内容不变刷新间隔
+	NormalChangedRefreshInterval time.Duration // 普通且内容变化刷新间隔
+	StableRefreshInterval        time.Duration // 连续多次不变刷新间隔
+	ArchivedRefreshInterval      time.Duration // 长期不变刷新间隔
+	RefreshQueueSize             int           // 后台刷新队列容量
+	RefreshWorkerCount           int           // 后台刷新worker数量
 
 	// CORS 相关配置
 	CORSAllowOrigins     string // 允许的来源，多个用英文逗号分隔，支持 * 与 *.example.com
@@ -175,12 +182,19 @@ func LoadConfig() error {
 		DandanplayCredentialLog: getEnvBool("DANDANPLAY_CREDENTIAL_LOG", false),
 		DatabaseURL:             os.Getenv("DATABASE_URL"),
 
-		RedisSnapshotTTL:            parseDuration("REDIS_SNAPSHOT_TTL", 48*time.Hour),
-		DefaultRefreshInterval:      parseDuration("DEFAULT_REFRESH_INTERVAL", 24*time.Hour),
-		EmptyDanmakuRefreshInterval: parseDurationWithFallback("EMPTY_DANMAKU_REFRESH_INTERVAL", "EMPTY_COMMENTS_REFRESH_INTERVAL", 1*time.Hour),
-		RefreshFailureRetryInterval: parseDuration("REFRESH_FAILURE_RETRY_INTERVAL", 30*time.Minute),
-		RefreshQueueSize:            getEnvInt("REFRESH_QUEUE_SIZE", 100),
-		RefreshWorkerCount:          getEnvInt("REFRESH_WORKER_COUNT", 2),
+		RedisSnapshotTTL:             parseDuration("REDIS_SNAPSHOT_TTL", 48*time.Hour),
+		DefaultRefreshInterval:       parseDuration("DEFAULT_REFRESH_INTERVAL", 24*time.Hour),
+		EmptyDanmakuRefreshInterval:  parseDurationWithFallback("EMPTY_DANMAKU_REFRESH_INTERVAL", "EMPTY_COMMENTS_REFRESH_INTERVAL", 1*time.Hour),
+		RefreshFailureRetryInterval:  parseDuration("REFRESH_FAILURE_RETRY_INTERVAL", 30*time.Minute),
+		RefreshAccessWindow:          parseDuration("REFRESH_ACCESS_WINDOW", 24*time.Hour),
+		HotAccessThreshold:           getEnvInt("HOT_ACCESS_THRESHOLD", 10),
+		HotChangedRefreshInterval:    parseDuration("HOT_CHANGED_REFRESH_INTERVAL", 2*time.Hour),
+		HotUnchangedRefreshInterval:  parseDuration("HOT_UNCHANGED_REFRESH_INTERVAL", 6*time.Hour),
+		NormalChangedRefreshInterval: parseDuration("NORMAL_CHANGED_REFRESH_INTERVAL", 12*time.Hour),
+		StableRefreshInterval:        parseDuration("STABLE_REFRESH_INTERVAL", 72*time.Hour),
+		ArchivedRefreshInterval:      parseDuration("ARCHIVED_REFRESH_INTERVAL", 168*time.Hour),
+		RefreshQueueSize:             getEnvInt("REFRESH_QUEUE_SIZE", 100),
+		RefreshWorkerCount:           getEnvInt("REFRESH_WORKER_COUNT", 2),
 
 		CORSAllowOrigins:     getEnvDefault("CORS_ALLOW_ORIGINS", "*"),
 		CORSAllowMethods:     getEnvDefault("CORS_ALLOW_METHODS", "GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD"),

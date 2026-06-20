@@ -80,6 +80,79 @@ func TestPostgresSnapshotStoreUpsertAndGet(t *testing.T) {
 	if got.DanmakuCount != 2 {
 		t.Fatalf("DanmakuCount = %d", got.DanmakuCount)
 	}
+	if got.AccessCount != 0 {
+		t.Fatalf("AccessCount = %d", got.AccessCount)
+	}
+	if got.RecentAccessCount != 0 {
+		t.Fatalf("RecentAccessCount = %d", got.RecentAccessCount)
+	}
+}
+
+func TestPostgresSnapshotStoreRecordAccessUpdatesRecentWindow(t *testing.T) {
+	store, cleanup := openTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	fetchedAt := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	snapshot := &Snapshot{
+		DandanEpisodeID:   123,
+		VariantKey:        "v1|withRelated=1",
+		Payload:           []byte("compressed"),
+		PayloadEncoding:   "gzip",
+		FetchedAt:         fetchedAt,
+		NextRefreshAt:     fetchedAt.Add(24 * time.Hour),
+		DanmakuCount:      2,
+		ContentHash:       "hash",
+		LastRefreshStatus: "success",
+	}
+	if err := store.Upsert(ctx, snapshot); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	firstAccess := fetchedAt.Add(time.Hour)
+	if err := store.RecordAccess(ctx, 123, "v1|withRelated=1", firstAccess, 24*time.Hour); err != nil {
+		t.Fatalf("first RecordAccess returned error: %v", err)
+	}
+	secondAccess := firstAccess.Add(time.Hour)
+	if err := store.RecordAccess(ctx, 123, "v1|withRelated=1", secondAccess, 24*time.Hour); err != nil {
+		t.Fatalf("second RecordAccess returned error: %v", err)
+	}
+
+	got, err := store.Get(ctx, 123, "v1|withRelated=1")
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if got.AccessCount != 2 {
+		t.Fatalf("AccessCount = %d", got.AccessCount)
+	}
+	if got.RecentAccessCount != 2 {
+		t.Fatalf("RecentAccessCount = %d", got.RecentAccessCount)
+	}
+	if !got.LastAccessedAt.Equal(secondAccess) {
+		t.Fatalf("LastAccessedAt = %s", got.LastAccessedAt)
+	}
+	if !got.RecentAccessWindowStartedAt.Equal(firstAccess) {
+		t.Fatalf("RecentAccessWindowStartedAt = %s", got.RecentAccessWindowStartedAt)
+	}
+
+	nextWindowAccess := firstAccess.Add(25 * time.Hour)
+	if err := store.RecordAccess(ctx, 123, "v1|withRelated=1", nextWindowAccess, 24*time.Hour); err != nil {
+		t.Fatalf("third RecordAccess returned error: %v", err)
+	}
+
+	got, err = store.Get(ctx, 123, "v1|withRelated=1")
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if got.AccessCount != 3 {
+		t.Fatalf("AccessCount after reset = %d", got.AccessCount)
+	}
+	if got.RecentAccessCount != 1 {
+		t.Fatalf("RecentAccessCount after reset = %d", got.RecentAccessCount)
+	}
+	if !got.RecentAccessWindowStartedAt.Equal(nextWindowAccess) {
+		t.Fatalf("RecentAccessWindowStartedAt after reset = %s", got.RecentAccessWindowStartedAt)
+	}
 }
 
 func TestPostgresSnapshotStoreGetNotFound(t *testing.T) {

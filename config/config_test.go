@@ -171,6 +171,75 @@ func TestLoadConfigUsesSnapshotDefaults(t *testing.T) {
 	if Config.DandanplayCredentialLog {
 		t.Fatal("DandanplayCredentialLog = true")
 	}
+	if Config.RefreshAccessWindow != 24*time.Hour {
+		t.Fatalf("RefreshAccessWindow = %v", Config.RefreshAccessWindow)
+	}
+	if Config.HotAccessThreshold != 10 {
+		t.Fatalf("HotAccessThreshold = %d", Config.HotAccessThreshold)
+	}
+	if Config.HotChangedRefreshInterval != 2*time.Hour {
+		t.Fatalf("HotChangedRefreshInterval = %v", Config.HotChangedRefreshInterval)
+	}
+	if Config.HotUnchangedRefreshInterval != 6*time.Hour {
+		t.Fatalf("HotUnchangedRefreshInterval = %v", Config.HotUnchangedRefreshInterval)
+	}
+	if Config.NormalChangedRefreshInterval != 12*time.Hour {
+		t.Fatalf("NormalChangedRefreshInterval = %v", Config.NormalChangedRefreshInterval)
+	}
+	if Config.StableRefreshInterval != 72*time.Hour {
+		t.Fatalf("StableRefreshInterval = %v", Config.StableRefreshInterval)
+	}
+	if Config.ArchivedRefreshInterval != 168*time.Hour {
+		t.Fatalf("ArchivedRefreshInterval = %v", Config.ArchivedRefreshInterval)
+	}
+}
+
+func TestLoadConfigUsesDynamicRefreshOverrides(t *testing.T) {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	t.Setenv("REFRESH_ACCESS_WINDOW", "43200")
+	t.Setenv("HOT_ACCESS_THRESHOLD", "20")
+	t.Setenv("HOT_CHANGED_REFRESH_INTERVAL", "3600")
+	t.Setenv("HOT_UNCHANGED_REFRESH_INTERVAL", "7200")
+	t.Setenv("NORMAL_CHANGED_REFRESH_INTERVAL", "21600")
+	t.Setenv("STABLE_REFRESH_INTERVAL", "172800")
+	t.Setenv("ARCHIVED_REFRESH_INTERVAL", "1209600")
+
+	if err := LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig returned error without .env: %v", err)
+	}
+
+	if Config.RefreshAccessWindow != 12*time.Hour {
+		t.Fatalf("RefreshAccessWindow = %v", Config.RefreshAccessWindow)
+	}
+	if Config.HotAccessThreshold != 20 {
+		t.Fatalf("HotAccessThreshold = %d", Config.HotAccessThreshold)
+	}
+	if Config.HotChangedRefreshInterval != time.Hour {
+		t.Fatalf("HotChangedRefreshInterval = %v", Config.HotChangedRefreshInterval)
+	}
+	if Config.HotUnchangedRefreshInterval != 2*time.Hour {
+		t.Fatalf("HotUnchangedRefreshInterval = %v", Config.HotUnchangedRefreshInterval)
+	}
+	if Config.NormalChangedRefreshInterval != 6*time.Hour {
+		t.Fatalf("NormalChangedRefreshInterval = %v", Config.NormalChangedRefreshInterval)
+	}
+	if Config.StableRefreshInterval != 48*time.Hour {
+		t.Fatalf("StableRefreshInterval = %v", Config.StableRefreshInterval)
+	}
+	if Config.ArchivedRefreshInterval != 14*24*time.Hour {
+		t.Fatalf("ArchivedRefreshInterval = %v", Config.ArchivedRefreshInterval)
+	}
 }
 
 func TestLoadConfigSupportsLegacyEmptyCommentsRefreshInterval(t *testing.T) {

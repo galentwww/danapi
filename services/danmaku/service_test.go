@@ -14,9 +14,15 @@ import (
 
 func testPolicy() RefreshPolicy {
 	return RefreshPolicy{
-		DefaultRefreshInterval:      24 * time.Hour,
-		EmptyDanmakuRefreshInterval: time.Hour,
-		RefreshFailureRetryInterval: 30 * time.Minute,
+		DefaultRefreshInterval:       24 * time.Hour,
+		EmptyDanmakuRefreshInterval:  time.Hour,
+		RefreshFailureRetryInterval:  30 * time.Minute,
+		HotAccessThreshold:           10,
+		HotChangedRefreshInterval:    2 * time.Hour,
+		HotUnchangedRefreshInterval:  6 * time.Hour,
+		NormalChangedRefreshInterval: 12 * time.Hour,
+		StableRefreshInterval:        72 * time.Hour,
+		ArchivedRefreshInterval:      168 * time.Hour,
 	}
 }
 
@@ -81,6 +87,15 @@ func TestCommentServiceRedisHitReturnsCachedPayload(t *testing.T) {
 	if store.getCalls != 0 {
 		t.Fatalf("store get calls = %d", store.getCalls)
 	}
+	if len(store.accessRecords) != 1 {
+		t.Fatalf("access record count = %d", len(store.accessRecords))
+	}
+	if store.accessRecords[0].dandanEpisodeID != 123 {
+		t.Fatalf("access dandanEpisodeID = %d", store.accessRecords[0].dandanEpisodeID)
+	}
+	if store.accessRecords[0].variantKey != "v1|withRelated=1" {
+		t.Fatalf("access variantKey = %q", store.accessRecords[0].variantKey)
+	}
 	if upstream.calls != 0 {
 		t.Fatalf("upstream calls = %d", upstream.calls)
 	}
@@ -120,6 +135,9 @@ func TestCommentServicePostgresHitRefillsRedis(t *testing.T) {
 	}
 	if upstream.calls != 0 {
 		t.Fatalf("upstream calls = %d", upstream.calls)
+	}
+	if len(store.accessRecords) != 1 {
+		t.Fatalf("access record count = %d", len(store.accessRecords))
 	}
 }
 
@@ -202,8 +220,17 @@ func TestCommentServiceFirstLoadWritesStoreBeforeRedis(t *testing.T) {
 	if len(store.upserts) != 1 {
 		t.Fatalf("upsert count = %d", len(store.upserts))
 	}
-	if store.upserts[0].NextRefreshAt != now.Add(24*time.Hour) {
+	if store.upserts[0].NextRefreshAt != now.Add(12*time.Hour) {
 		t.Fatalf("NextRefreshAt = %s", store.upserts[0].NextRefreshAt)
+	}
+	if store.upserts[0].AccessCount != 1 {
+		t.Fatalf("AccessCount = %d", store.upserts[0].AccessCount)
+	}
+	if store.upserts[0].RecentAccessCount != 1 {
+		t.Fatalf("RecentAccessCount = %d", store.upserts[0].RecentAccessCount)
+	}
+	if !store.upserts[0].LastAccessedAt.Equal(now) {
+		t.Fatalf("LastAccessedAt = %s", store.upserts[0].LastAccessedAt)
 	}
 }
 
@@ -368,6 +395,80 @@ func TestCommentServiceRefreshSkipsUpstreamWhenSnapshotIsAlreadyFresh(t *testing
 	}
 }
 
+func TestCommentServiceRefreshUsesHotChangedInterval(t *testing.T) {
+	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	oldBody := []byte(`{"count":1,"comments":[{"cid":1,"p":"0.00,1,16777215,abc","m":"one"}]}`)
+	newBody := []byte(`{"count":2,"comments":[{"cid":1,"p":"0.00,1,16777215,abc","m":"one"},{"cid":2,"p":"1.00,1,16777215,def","m":"two"}]}`)
+	stale := compressedSnapshot(t, 123, "v1|withRelated=1", oldBody, now.Add(-time.Minute))
+	stale.RecentAccessCount = 10
+	cache := &fakeSnapshotCache{}
+	store := &fakeSnapshotStore{snapshot: stale}
+	upstream := &fakeUpstreamClient{payload: newBody}
+	service := NewCommentService(CommentServiceOptions{
+		Cache:              cache,
+		Store:              store,
+		Upstream:           upstream,
+		Policy:             testPolicy(),
+		RedisSnapshotTTL:   48 * time.Hour,
+		RefreshQueueSize:   10,
+		RefreshWorkerCount: 0,
+		Now:                func() time.Time { return now },
+	})
+
+	service.refresh(context.Background(), refreshRequest{
+		dandanEpisodeID: 123,
+		episodeIDString: "123",
+		variant:         NormalizeVariant(mustQuery(t, "withRelated=true")),
+	})
+
+	if len(store.upserts) != 1 {
+		t.Fatalf("upsert count = %d", len(store.upserts))
+	}
+	if !store.upserts[0].NextRefreshAt.Equal(now.Add(2 * time.Hour)) {
+		t.Fatalf("NextRefreshAt = %s", store.upserts[0].NextRefreshAt)
+	}
+	if store.upserts[0].UnchangedStreak != 0 {
+		t.Fatalf("UnchangedStreak = %d", store.upserts[0].UnchangedStreak)
+	}
+}
+
+func TestCommentServiceRefreshUsesArchivedIntervalAfterRepeatedUnchangedPayloads(t *testing.T) {
+	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	body := []byte(`{"count":1,"comments":[{"cid":1,"p":"0.00,1,16777215,abc","m":"one"}]}`)
+	stale := compressedSnapshot(t, 123, "v1|withRelated=1", body, now.Add(-time.Minute))
+	stale.RecentAccessCount = 100
+	stale.UnchangedStreak = 6
+	cache := &fakeSnapshotCache{}
+	store := &fakeSnapshotStore{snapshot: stale}
+	upstream := &fakeUpstreamClient{payload: body}
+	service := NewCommentService(CommentServiceOptions{
+		Cache:              cache,
+		Store:              store,
+		Upstream:           upstream,
+		Policy:             testPolicy(),
+		RedisSnapshotTTL:   48 * time.Hour,
+		RefreshQueueSize:   10,
+		RefreshWorkerCount: 0,
+		Now:                func() time.Time { return now },
+	})
+
+	service.refresh(context.Background(), refreshRequest{
+		dandanEpisodeID: 123,
+		episodeIDString: "123",
+		variant:         NormalizeVariant(mustQuery(t, "withRelated=true")),
+	})
+
+	if len(store.upserts) != 1 {
+		t.Fatalf("upsert count = %d", len(store.upserts))
+	}
+	if !store.upserts[0].NextRefreshAt.Equal(now.Add(168 * time.Hour)) {
+		t.Fatalf("NextRefreshAt = %s", store.upserts[0].NextRefreshAt)
+	}
+	if store.upserts[0].UnchangedStreak != 7 {
+		t.Fatalf("UnchangedStreak = %d", store.upserts[0].UnchangedStreak)
+	}
+}
+
 func mustQuery(t *testing.T, raw string) url.Values {
 	t.Helper()
 	values, err := url.ParseQuery(raw)
@@ -404,13 +505,21 @@ func (c *fakeSnapshotCache) Delete(ctx context.Context, dandanEpisodeID int64, v
 }
 
 type fakeSnapshotStore struct {
-	mu        sync.Mutex
-	snapshot  *storage.Snapshot
-	getErr    error
-	getCalls  int
-	upserts   []*storage.Snapshot
-	onUpsert  func()
-	markError chan struct{}
+	mu            sync.Mutex
+	snapshot      *storage.Snapshot
+	getErr        error
+	getCalls      int
+	upserts       []*storage.Snapshot
+	accessRecords []accessRecord
+	onUpsert      func()
+	markError     chan struct{}
+}
+
+type accessRecord struct {
+	dandanEpisodeID int64
+	variantKey      string
+	accessedAt      time.Time
+	window          time.Duration
 }
 
 func (s *fakeSnapshotStore) Get(ctx context.Context, dandanEpisodeID int64, variantKey string) (*storage.Snapshot, error) {
@@ -442,6 +551,18 @@ func (s *fakeSnapshotStore) MarkRefreshError(ctx context.Context, dandanEpisodeI
 		close(s.markError)
 		s.markError = nil
 	}
+	return nil
+}
+
+func (s *fakeSnapshotStore) RecordAccess(ctx context.Context, dandanEpisodeID int64, variantKey string, accessedAt time.Time, window time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.accessRecords = append(s.accessRecords, accessRecord{
+		dandanEpisodeID: dandanEpisodeID,
+		variantKey:      variantKey,
+		accessedAt:      accessedAt,
+		window:          window,
+	})
 	return nil
 }
 
