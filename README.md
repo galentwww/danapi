@@ -166,6 +166,8 @@ MIDDLEWARE_IMAGE=dandanplay-middleware:local docker compose up -d
 
 - `/api/v2/comment/{id}` 先查 Redis 热缓存，再查 PostgreSQL 快照，最后才访问弹弹Play。
 - PostgreSQL 中已有快照时，即使达到刷新时间，也会先返回旧快照，再尝试后台刷新。
+- PostgreSQL 快照已过期时不会回填 Redis；Redis 只保存逻辑上仍 fresh 的热快照。
+- 后台刷新按 `dandan_episode_id + variant_key` 去重，worker 执行前会再次检查快照是否已经 fresh，避免并发访问重复打上游。
 - 首次没有快照且上游失败时返回 503。
 - `withRelated=true` 会规范化为 `variant_key = v1|withRelated=1`。
 - 默认刷新周期：普通弹幕 24 小时，空 `comments` 1 小时，刷新失败 30 分钟后重试。

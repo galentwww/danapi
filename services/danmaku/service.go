@@ -61,6 +61,8 @@ type CommentService struct {
 	loadGroup        singleflight.Group
 	refreshGroup     singleflight.Group
 	refreshQueue     chan refreshRequest
+	refreshMu        sync.Mutex
+	refreshPending   map[string]struct{}
 	closeOnce        sync.Once
 	cancel           context.CancelFunc
 }
@@ -89,6 +91,7 @@ func NewCommentService(options CommentServiceOptions) *CommentService {
 		redisSnapshotTTL: options.RedisSnapshotTTL,
 		now:              now,
 		refreshQueue:     make(chan refreshRequest, queueSize),
+		refreshPending:   make(map[string]struct{}),
 		cancel:           cancel,
 	}
 	for i := 0; i < options.RefreshWorkerCount; i++ {
@@ -119,6 +122,7 @@ func (s *CommentService) GetComments(ctx context.Context, dandanEpisodeID string
 			return nil, err
 		}
 		if !snapshot.NextRefreshAt.After(s.now()) {
+			_ = s.cache.Delete(ctx, episodeID, variantKey)
 			s.enqueueRefresh(episodeID, dandanEpisodeID, variant)
 			return commentResult(payload, "stale", snapshot), nil
 		}
@@ -127,7 +131,6 @@ func (s *CommentService) GetComments(ctx context.Context, dandanEpisodeID string
 
 	snapshot, err := s.store.Get(ctx, episodeID, variantKey)
 	if err == nil {
-		_ = s.cache.Set(ctx, snapshot, s.redisSnapshotTTL)
 		payload, err := snapshotPayload(snapshot)
 		if err != nil {
 			return nil, err
@@ -136,6 +139,7 @@ func (s *CommentService) GetComments(ctx context.Context, dandanEpisodeID string
 			s.enqueueRefresh(episodeID, dandanEpisodeID, variant)
 			return commentResult(payload, "stale", snapshot), nil
 		}
+		_ = s.cache.Set(ctx, snapshot, s.redisSnapshotTTL)
 		return commentResult(payload, "postgres", snapshot), nil
 	}
 	if !errors.Is(err, storage.ErrSnapshotNotFound) {
@@ -160,7 +164,6 @@ func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episode
 			return commentResult(payload, status, snapshot), nil
 		}
 		if snapshot, err := s.store.Get(ctx, episodeID, variant.Key()); err == nil {
-			_ = s.cache.Set(ctx, snapshot, s.redisSnapshotTTL)
 			payload, err := snapshotPayload(snapshot)
 			if err != nil {
 				return nil, err
@@ -168,6 +171,9 @@ func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episode
 			status := "postgres"
 			if !snapshot.NextRefreshAt.After(s.now()) {
 				status = "stale"
+				s.enqueueRefresh(episodeID, episodeIDString, variant)
+			} else {
+				_ = s.cache.Set(ctx, snapshot, s.redisSnapshotTTL)
 			}
 			return commentResult(payload, status, snapshot), nil
 		} else if !errors.Is(err, storage.ErrSnapshotNotFound) {
@@ -195,6 +201,10 @@ func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episode
 }
 
 func (s *CommentService) enqueueRefresh(episodeID int64, episodeIDString string, variant Variant) {
+	key := refreshKey(episodeID, variant.Key())
+	if !s.markRefreshPending(key) {
+		return
+	}
 	request := refreshRequest{
 		dandanEpisodeID: episodeID,
 		episodeIDString: episodeIDString,
@@ -203,6 +213,7 @@ func (s *CommentService) enqueueRefresh(episodeID int64, episodeIDString string,
 	select {
 	case s.refreshQueue <- request:
 	default:
+		s.clearRefreshPending(key)
 	}
 }
 
@@ -218,14 +229,24 @@ func (s *CommentService) refreshWorker(ctx context.Context) {
 }
 
 func (s *CommentService) refresh(ctx context.Context, request refreshRequest) {
-	key := fmt.Sprintf("%d:%s", request.dandanEpisodeID, request.variant.Key())
+	key := refreshKey(request.dandanEpisodeID, request.variant.Key())
+	defer s.clearRefreshPending(key)
+
 	_, _, _ = s.refreshGroup.Do(key, func() (interface{}, error) {
+		snapshot, err := s.store.Get(ctx, request.dandanEpisodeID, request.variant.Key())
+		if err == nil && snapshot.NextRefreshAt.After(s.now()) {
+			return nil, nil
+		}
+		if err != nil && !errors.Is(err, storage.ErrSnapshotNotFound) {
+			return nil, err
+		}
+
 		payload, err := s.upstream.FetchComments(ctx, request.episodeIDString, request.variant.UpstreamQuery())
 		if err != nil {
 			_ = s.store.MarkRefreshError(ctx, request.dandanEpisodeID, request.variant.Key(), s.policy.RefreshFailureRetryAt(s.now()), err.Error())
 			return nil, err
 		}
-		snapshot, err := s.snapshotFromPayload(request.dandanEpisodeID, request.variant.Key(), payload)
+		snapshot, err = s.snapshotFromPayload(request.dandanEpisodeID, request.variant.Key(), payload)
 		if err != nil {
 			_ = s.store.MarkRefreshError(ctx, request.dandanEpisodeID, request.variant.Key(), s.policy.RefreshFailureRetryAt(s.now()), err.Error())
 			return nil, err
@@ -236,6 +257,26 @@ func (s *CommentService) refresh(ctx context.Context, request refreshRequest) {
 		_ = s.cache.Set(ctx, snapshot, s.redisSnapshotTTL)
 		return nil, nil
 	})
+}
+
+func refreshKey(episodeID int64, variantKey string) string {
+	return fmt.Sprintf("%d:%s", episodeID, variantKey)
+}
+
+func (s *CommentService) markRefreshPending(key string) bool {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	if _, ok := s.refreshPending[key]; ok {
+		return false
+	}
+	s.refreshPending[key] = struct{}{}
+	return true
+}
+
+func (s *CommentService) clearRefreshPending(key string) {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	delete(s.refreshPending, key)
 }
 
 func (s *CommentService) snapshotFromPayload(episodeID int64, variantKey string, payload []byte) (*storage.Snapshot, error) {

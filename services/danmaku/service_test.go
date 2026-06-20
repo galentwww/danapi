@@ -123,6 +123,40 @@ func TestCommentServicePostgresHitRefillsRedis(t *testing.T) {
 	}
 }
 
+func TestCommentServiceStaleRedisHitDeletesCachedSnapshot(t *testing.T) {
+	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	body := []byte(`{"count":1,"comments":[{"cid":1,"p":"0.00,1,16777215,abc","m":"one"}]}`)
+	stale := compressedSnapshot(t, 123, "v1|withRelated=1", body, now.Add(-time.Minute))
+	cache := &fakeSnapshotCache{
+		getSnapshot: stale,
+		getStatus:   CacheHit,
+	}
+	store := &fakeSnapshotStore{}
+	upstream := &fakeUpstreamClient{}
+	service := NewCommentService(CommentServiceOptions{
+		Cache:              cache,
+		Store:              store,
+		Upstream:           upstream,
+		Policy:             testPolicy(),
+		RedisSnapshotTTL:   48 * time.Hour,
+		RefreshQueueSize:   10,
+		RefreshWorkerCount: 0,
+		Now:                func() time.Time { return now },
+	})
+
+	result, err := service.GetComments(context.Background(), "123", mustQuery(t, "withRelated=true"))
+	if err != nil {
+		t.Fatalf("GetComments returned error: %v", err)
+	}
+
+	if result.CacheStatus != "stale" {
+		t.Fatalf("CacheStatus = %q", result.CacheStatus)
+	}
+	if cache.deleteCalls != 1 {
+		t.Fatalf("cache delete calls = %d", cache.deleteCalls)
+	}
+}
+
 func TestCommentServiceFirstLoadWritesStoreBeforeRedis(t *testing.T) {
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	body := []byte(`{"count":1,"comments":[{"cid":1,"p":"0.00,1,16777215,abc","m":"one"}]}`)
@@ -235,6 +269,105 @@ func TestCommentServiceStaleSnapshotReturnsWhileRefreshFails(t *testing.T) {
 	}
 }
 
+func TestCommentServiceStalePostgresHitDoesNotRefillRedis(t *testing.T) {
+	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	body := []byte(`{"count":1,"comments":[{"cid":1,"p":"0.00,1,16777215,abc","m":"one"}]}`)
+	stale := compressedSnapshot(t, 123, "v1|withRelated=1", body, now.Add(-time.Minute))
+	cache := &fakeSnapshotCache{getStatus: CacheMiss}
+	store := &fakeSnapshotStore{snapshot: stale}
+	upstream := &fakeUpstreamClient{}
+	service := NewCommentService(CommentServiceOptions{
+		Cache:              cache,
+		Store:              store,
+		Upstream:           upstream,
+		Policy:             testPolicy(),
+		RedisSnapshotTTL:   48 * time.Hour,
+		RefreshQueueSize:   10,
+		RefreshWorkerCount: 0,
+		Now:                func() time.Time { return now },
+	})
+
+	result, err := service.GetComments(context.Background(), "123", mustQuery(t, "withRelated=true"))
+	if err != nil {
+		t.Fatalf("GetComments returned error: %v", err)
+	}
+
+	if result.CacheStatus != "stale" {
+		t.Fatalf("CacheStatus = %q", result.CacheStatus)
+	}
+	if len(cache.setSnapshots) != 0 {
+		t.Fatalf("cache set count = %d", len(cache.setSnapshots))
+	}
+}
+
+func TestCommentServiceDuplicateStaleRequestsEnqueueOneRefresh(t *testing.T) {
+	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	body := []byte(`{"count":1,"comments":[{"cid":1,"p":"0.00,1,16777215,abc","m":"one"}]}`)
+	stale := compressedSnapshot(t, 123, "v1|withRelated=1", body, now.Add(-time.Minute))
+	cache := &fakeSnapshotCache{getStatus: CacheMiss}
+	store := &fakeSnapshotStore{snapshot: stale}
+	upstream := &fakeUpstreamClient{}
+	service := NewCommentService(CommentServiceOptions{
+		Cache:              cache,
+		Store:              store,
+		Upstream:           upstream,
+		Policy:             testPolicy(),
+		RedisSnapshotTTL:   48 * time.Hour,
+		RefreshQueueSize:   100,
+		RefreshWorkerCount: 0,
+		Now:                func() time.Time { return now },
+	})
+
+	for i := 0; i < 100; i++ {
+		result, err := service.GetComments(context.Background(), "123", mustQuery(t, "withRelated=true"))
+		if err != nil {
+			t.Fatalf("GetComments request %d returned error: %v", i, err)
+		}
+		if result.CacheStatus != "stale" {
+			t.Fatalf("request %d CacheStatus = %q", i, result.CacheStatus)
+		}
+	}
+
+	if got := len(service.refreshQueue); got != 1 {
+		t.Fatalf("queued refresh count = %d", got)
+	}
+}
+
+func TestCommentServiceRefreshSkipsUpstreamWhenSnapshotIsAlreadyFresh(t *testing.T) {
+	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	body := []byte(`{"count":1,"comments":[{"cid":1,"p":"0.00,1,16777215,abc","m":"one"}]}`)
+	fresh := compressedSnapshot(t, 123, "v1|withRelated=1", body, now.Add(time.Hour))
+	cache := &fakeSnapshotCache{}
+	store := &fakeSnapshotStore{snapshot: fresh}
+	upstream := &fakeUpstreamClient{payload: []byte(`{"count":1,"comments":[{"cid":2,"p":"1.00,1,16777215,def","m":"two"}]}`)}
+	service := NewCommentService(CommentServiceOptions{
+		Cache:              cache,
+		Store:              store,
+		Upstream:           upstream,
+		Policy:             testPolicy(),
+		RedisSnapshotTTL:   48 * time.Hour,
+		RefreshQueueSize:   10,
+		RefreshWorkerCount: 0,
+		Now:                func() time.Time { return now },
+	})
+
+	service.refresh(context.Background(), refreshRequest{
+		dandanEpisodeID: 123,
+		episodeIDString: "123",
+		variant:         NormalizeVariant(mustQuery(t, "withRelated=true")),
+	})
+
+	if upstream.calls != 0 {
+		t.Fatalf("upstream calls = %d", upstream.calls)
+	}
+	if len(store.upserts) != 0 {
+		t.Fatalf("upsert count = %d", len(store.upserts))
+	}
+	if len(cache.setSnapshots) != 0 {
+		t.Fatalf("cache set count = %d", len(cache.setSnapshots))
+	}
+}
+
 func mustQuery(t *testing.T, raw string) url.Values {
 	t.Helper()
 	values, err := url.ParseQuery(raw)
@@ -249,6 +382,7 @@ type fakeSnapshotCache struct {
 	getStatus    CacheStatus
 	getErr       error
 	setSnapshots []*storage.Snapshot
+	deleteCalls  int
 	onSet        func()
 }
 
@@ -265,6 +399,7 @@ func (c *fakeSnapshotCache) Set(ctx context.Context, snapshot *storage.Snapshot,
 }
 
 func (c *fakeSnapshotCache) Delete(ctx context.Context, dandanEpisodeID int64, variantKey string) error {
+	c.deleteCalls++
 	return nil
 }
 
