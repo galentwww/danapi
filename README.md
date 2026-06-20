@@ -31,6 +31,7 @@
   - `/api/v2/bangumi/bgmtv/{id}` - 通过 Bangumi.tv subjectId 获取番剧详情
   - `/api/v2/related/{id}` - 兼容旧版本（返回空数据）
 - 弹幕响应保持弹弹Play兼容格式，主体是包含 `count` 和 `comments` 的 JSON 对象
+- 当前已知前端调用会带 `withRelated=true`，该参数会影响后续弹幕快照缓存维度
 - Redis缓存支持
 - 独立配置的缓存时间
 - 完整的API鉴权

@@ -10,6 +10,7 @@
   - `GET /api/v2/related/:id`
 - Keep `/api/v2/comment/:id` as the frontend compatibility baseline unless the user explicitly approves a routing migration.
 - Current danmaku responses are DandanPlay-compatible JSON objects with `count` and `comments`, not bare arrays.
+- Current known `xfdm-web` call is `GET ${NEXT_PUBLIC_DANMAKU_MIDDLEWARE_URL}/api/v2/comment/${dandanEpisodeId}?withRelated=true`; first-stage `variant_key` should only include normalized `withRelated`.
 - Current cache persistence is Redis only. There is no SQL database, ORM, or migration framework yet.
 - Docker Compose runs `middleware` and `redis`; Redis persists to named volume `dandanplay-newmiddleware-bgmcors_redis-data` under the default project name.
 - The real `.env` is ignored. Use `.env.example` for documented variables.
