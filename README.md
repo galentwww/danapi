@@ -33,6 +33,7 @@
 - 弹幕响应保持弹弹Play兼容格式，主体是包含 `count` 和 `comments` 的 JSON 对象
 - 当前已知前端调用会带 `withRelated=true`，该参数会影响后续弹幕快照缓存维度
 - Redis缓存支持
+- PostgreSQL 弹幕快照持久化，Redis miss 后先查数据库，不直接穿透上游
 - 独立配置的缓存时间
 - 完整的API鉴权
 - 详细的操作日志
@@ -57,11 +58,23 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
 REDIS_DB=0
+PostgreSQL配置
+POSTGRES_DB=dandanplay_middleware
+POSTGRES_USER=middleware
+POSTGRES_PASSWORD=middleware_password
+DATABASE_URL=postgres://middleware:middleware_password@postgres:5432/dandanplay_middleware?sslmode=disable
 服务器配置
 SERVER_PORT=8080
 缓存时间配置（秒）
 SEARCH_CACHE_DURATION= # 搜索结果缓存
 DANMAKU_CACHE_DURATION= # 弹幕数据缓存
+弹幕快照刷新配置（秒）
+REDIS_SNAPSHOT_TTL=172800
+DEFAULT_REFRESH_INTERVAL=86400
+EMPTY_COMMENTS_REFRESH_INTERVAL=3600
+REFRESH_FAILURE_RETRY_INTERVAL=1800
+REFRESH_QUEUE_SIZE=100
+REFRESH_WORKER_COUNT=2
 CORS配置
 CORS_ALLOW_ORIGINS=*
 CORS_ALLOW_METHODS=GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD
@@ -87,10 +100,11 @@ CORS_MAX_AGE=86400
    APP_SECRET=your_app_secret
    ```
 
-   Compose 默认会把中间件连接到内置 Redis 服务：
+   Compose 默认会把中间件连接到内置 Redis 和 PostgreSQL 服务：
    ```bash
    REDIS_HOST=redis
    REDIS_PORT=6379
+   DATABASE_URL=postgres://middleware:middleware_password@postgres:5432/dandanplay_middleware?sslmode=disable
    SERVER_PORT=8080
    ```
 
@@ -109,10 +123,11 @@ CORS_MAX_AGE=86400
    docker compose down
    ```
 
-   Redis 数据会保存在 Docker 命名卷中。当前目录下的默认卷名是 `dandanplay-newmiddleware-bgmcors_redis-data`；实际前缀取决于 Compose 项目名。可以用以下命令查看：
+   Redis 和 PostgreSQL 数据会保存在 Docker 命名卷中。当前目录下的默认卷名是 `dandanplay-newmiddleware-bgmcors_redis-data` 和 `dandanplay-newmiddleware-bgmcors_postgres-data`；实际前缀取决于 Compose 项目名。可以用以下命令查看：
    ```bash
    docker compose config --volumes
    docker volume inspect dandanplay-newmiddleware-bgmcors_redis-data
+   docker volume inspect dandanplay-newmiddleware-bgmcors_postgres-data
    ```
 
    如果需要删除缓存数据：
@@ -120,7 +135,15 @@ CORS_MAX_AGE=86400
    docker compose down -v
    ```
 
-> 说明：容器内不要求必须存在 `.env` 文件。程序会优先读取 `.env`，如果文件不存在，则直接使用容器环境变量。后续如果新增 PostgreSQL/MySQL 等数据库，建议沿用 Compose service + named volume 的方式持久化，不把数据库文件写进应用容器。
+> 说明：容器内不要求必须存在 `.env` 文件。程序会优先读取 `.env`，如果文件不存在，则直接使用容器环境变量。弹幕快照 PostgreSQL 是中间件独立数据库，不连接核心业务库；payload 会以 gzip 压缩字节保存。
+
+### 4. 弹幕快照策略
+
+- `/api/v2/comment/{id}` 先查 Redis 热缓存，再查 PostgreSQL 快照，最后才访问弹弹Play。
+- PostgreSQL 中已有快照时，即使达到刷新时间，也会先返回旧快照，再尝试后台刷新。
+- 首次没有快照且上游失败时返回 503。
+- `withRelated=true` 会规范化为 `variant_key = v1|withRelated=1`。
+- 默认刷新周期：普通弹幕 24 小时，空 `comments` 1 小时，刷新失败 30 分钟后重试。
 
 #### 方式二：使用预编译的二进制文件
 1. 下载对应平台的二进制文件
