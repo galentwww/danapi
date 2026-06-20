@@ -17,7 +17,7 @@
 
 ## Next Design Context
 
-- The handoff at `/Users/galentwww/Desktop/dandanplay_middleware_handoff.md` describes the next major work: persistent danmaku snapshots and cache refresh control.
+- The handoff document used during this phase describes the next major work: persistent danmaku snapshots and cache refresh control.
 - Persistent danmaku snapshots are implemented for `/api/v2/comment/:id`: Redis miss queries PostgreSQL before upstream, first loads use singleflight, stale snapshots return before background refresh.
 - `/api/v2/comment/:id` sets debug headers: `X-Danmaku-Cache`, `X-Danmaku-Variant`, `X-Danmaku-Fetched-At`, and `X-Danmaku-Next-Refresh-At`.
 - If a future design mentions `/comments/{episodeId}`, verify with the user; current fact is `/api/v2/comment/:id`.
