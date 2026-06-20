@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"dandanplay-middleware/config"
 	"dandanplay-middleware/utils"
 	"log"
@@ -80,7 +81,7 @@ func TestDandanplayServiceUsesSameCredentialForRedirect(t *testing.T) {
 		},
 	})
 
-	if _, err := service.FetchComments(t.Context(), "123", "withRelated=true"); err != nil {
+	if _, err := service.FetchComments(context.Background(), "123", "withRelated=true"); err != nil {
 		t.Fatalf("FetchComments returned error: %v", err)
 	}
 
