@@ -96,6 +96,56 @@ func TestDandanplayServiceUsesSameCredentialForRedirect(t *testing.T) {
 	}
 }
 
+func TestDandanplayServiceFetchCommentsAddsChConvert(t *testing.T) {
+	var rawQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"count":0,"comments":[]}`))
+	}))
+	defer server.Close()
+
+	config.Config.DandanplayBaseURL = server.URL
+	service := NewDandanplayServiceWithCredentialProvider(&sequenceCredentialProvider{
+		credentials: []config.DandanplayCredential{
+			{AppID: "app-a", AppSecret: "secret-a"},
+		},
+	})
+
+	if _, err := service.FetchComments(context.Background(), "123", "withRelated=true"); err != nil {
+		t.Fatalf("FetchComments returned error: %v", err)
+	}
+
+	if rawQuery != "chConvert=1&withRelated=true" {
+		t.Fatalf("RawQuery = %q", rawQuery)
+	}
+}
+
+func TestDandanplayServiceFetchCommentsDoesNotDuplicateChConvert(t *testing.T) {
+	var rawQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"count":0,"comments":[]}`))
+	}))
+	defer server.Close()
+
+	config.Config.DandanplayBaseURL = server.URL
+	service := NewDandanplayServiceWithCredentialProvider(&sequenceCredentialProvider{
+		credentials: []config.DandanplayCredential{
+			{AppID: "app-a", AppSecret: "secret-a"},
+		},
+	})
+
+	if _, err := service.FetchComments(context.Background(), "123", "chConvert=1&withRelated=true"); err != nil {
+		t.Fatalf("FetchComments returned error: %v", err)
+	}
+
+	if rawQuery != "chConvert=1&withRelated=true" {
+		t.Fatalf("RawQuery = %q", rawQuery)
+	}
+}
+
 func TestDandanplayServiceDoesNotLogCredentialByDefault(t *testing.T) {
 	originalConfig := config.Config
 	t.Cleanup(func() {

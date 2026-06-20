@@ -17,7 +17,7 @@ func TestNormalizeVariantWithRelatedTrue(t *testing.T) {
 		if variant.Key() != "v1|withRelated=1" {
 			t.Fatalf("Key() = %q for %q", variant.Key(), raw)
 		}
-		if variant.UpstreamQuery() != "withRelated=true" {
+		if variant.UpstreamQuery() != "chConvert=1&withRelated=true" {
 			t.Fatalf("UpstreamQuery() = %q for %q", variant.UpstreamQuery(), raw)
 		}
 	}
@@ -35,9 +35,22 @@ func TestNormalizeVariantWithRelatedFalse(t *testing.T) {
 		if variant.Key() != "v1|withRelated=0" {
 			t.Fatalf("Key() = %q for %q", variant.Key(), raw)
 		}
-		if variant.UpstreamQuery() != "withRelated=false" {
+		if variant.UpstreamQuery() != "chConvert=1&withRelated=false" {
 			t.Fatalf("UpstreamQuery() = %q for %q", variant.UpstreamQuery(), raw)
 		}
+	}
+}
+
+func TestUpstreamQueryRequestsSimplifiedChineseDanmaku(t *testing.T) {
+	values, err := url.ParseQuery("withRelated=true")
+	if err != nil {
+		t.Fatalf("parse query: %v", err)
+	}
+
+	query := NormalizeVariant(values).UpstreamQuery()
+
+	if query != "chConvert=1&withRelated=true" {
+		t.Fatalf("UpstreamQuery() = %q", query)
 	}
 }
 

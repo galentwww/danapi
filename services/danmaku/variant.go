@@ -23,6 +23,7 @@ func (v Variant) Key() string {
 
 func (v Variant) UpstreamQuery() string {
 	values := url.Values{}
+	values.Set("chConvert", "1")
 	if v.WithRelated {
 		values.Set("withRelated", "true")
 	} else {

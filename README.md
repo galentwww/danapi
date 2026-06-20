@@ -32,6 +32,7 @@
   - `/api/v2/related/{id}` - 兼容旧版本（返回空数据）
 - 弹幕响应保持弹弹Play兼容格式，主体是包含 `count` 和 `comments` 的 JSON 对象
 - 当前已知前端调用会带 `withRelated=true`，该参数会影响后续弹幕快照缓存维度
+- 中间件访问弹弹Play弹幕上游时固定追加 `chConvert=1`，用于获取简体中文弹幕
 - Redis缓存支持
 - PostgreSQL 弹幕快照持久化，Redis miss 后先查数据库，不直接穿透上游
 - 独立配置的缓存时间
@@ -189,6 +190,7 @@ MIDDLEWARE_IMAGE=dandanplay-middleware:local docker compose up -d
 - 后台刷新按 `dandan_episode_id + variant_key` 去重，worker 执行前会再次检查快照是否已经 fresh，避免并发访问重复打上游。
 - 首次没有快照且上游失败时返回 503。
 - `withRelated=true` 会规范化为 `variant_key = v1|withRelated=1`。
+- `chConvert=1` 是中间件固定追加的上游获取参数，不进入 `variant_key`；已有旧快照会在过期刷新或首次无快照拉取时自然更新为简体内容。
 - 默认刷新周期由访问热度和弹幕变化动态计算，`next_refresh_at` 只表示下一次允许刷新上游的时间；时间到了但没人访问，不会主动消耗弹弹Play请求次数。
   - 首次没有快照：需要访问弹弹Play一次，成功后写入快照。
   - 空 `comments`：1 小时后允许刷新。

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -73,7 +74,7 @@ func (s *DandanplayService) GetDanmaku(id string, query string) ([]byte, error) 
 
 func (s *DandanplayService) FetchComments(ctx context.Context, id string, query string) ([]byte, error) {
 	path := fmt.Sprintf("/api/v2/comment/%s", id)
-	url := fmt.Sprintf("%s%s?%s", config.Config.DandanplayBaseURL, path, query)
+	url := fmt.Sprintf("%s%s?%s", config.Config.DandanplayBaseURL, path, simplifiedChineseQuery(query))
 
 	// 创建请求
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -169,4 +170,16 @@ func (s *DandanplayService) logCredentialSelection(selection utils.CredentialSel
 		selection.Index+1,
 		utils.MaskCredentialAppID(selection.Credential.AppID),
 	)
+}
+
+func simplifiedChineseQuery(raw string) string {
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		if raw == "" {
+			return "chConvert=1"
+		}
+		return raw + "&chConvert=1"
+	}
+	values.Set("chConvert", "1")
+	return values.Encode()
 }
