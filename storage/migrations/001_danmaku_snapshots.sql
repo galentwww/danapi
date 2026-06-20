@@ -8,7 +8,7 @@ create table if not exists danmaku_snapshots (
     fetched_at timestamptz not null,
     next_refresh_at timestamptz not null,
 
-    comment_count integer not null default 0,
+    danmaku_count integer not null default 0,
     content_hash text not null,
     unchanged_streak integer not null default 0,
 

@@ -24,7 +24,7 @@ func TestCacheEnvelopeRoundTrip(t *testing.T) {
 		PayloadEncoding:   "gzip",
 		FetchedAt:         fetchedAt,
 		NextRefreshAt:     fetchedAt.Add(24 * time.Hour),
-		CommentCount:      2,
+		DanmakuCount:      2,
 		ContentHash:       "hash",
 		UnchangedStreak:   1,
 		Version:           7,

@@ -11,7 +11,7 @@ import (
 )
 
 type PayloadInfo struct {
-	CommentCount int
+	DanmakuCount int
 	ContentHash  string
 }
 
@@ -31,7 +31,7 @@ func ValidatePayload(payload []byte) (PayloadInfo, error) {
 
 	hash := sha256.Sum256(payload)
 	return PayloadInfo{
-		CommentCount: len(envelope.Comments),
+		DanmakuCount: len(envelope.Comments),
 		ContentHash:  hex.EncodeToString(hash[:]),
 	}, nil
 }

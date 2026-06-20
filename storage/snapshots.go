@@ -18,7 +18,7 @@ type Snapshot struct {
 	PayloadEncoding     string
 	FetchedAt           time.Time
 	NextRefreshAt       time.Time
-	CommentCount        int
+	DanmakuCount        int
 	ContentHash         string
 	UnchangedStreak     int
 	Version             int64
@@ -45,7 +45,7 @@ select
 	payload_encoding,
 	fetched_at,
 	next_refresh_at,
-	comment_count,
+	danmaku_count,
 	content_hash,
 	unchanged_streak,
 	version,
@@ -64,7 +64,7 @@ where dandan_episode_id = $1 and variant_key = $2`
 		&snapshot.PayloadEncoding,
 		&snapshot.FetchedAt,
 		&snapshot.NextRefreshAt,
-		&snapshot.CommentCount,
+		&snapshot.DanmakuCount,
 		&snapshot.ContentHash,
 		&snapshot.UnchangedStreak,
 		&snapshot.Version,
@@ -101,7 +101,7 @@ insert into danmaku_snapshots (
 	payload_encoding,
 	fetched_at,
 	next_refresh_at,
-	comment_count,
+	danmaku_count,
 	content_hash,
 	unchanged_streak,
 	version,
@@ -117,7 +117,7 @@ do update set
 	payload_encoding = excluded.payload_encoding,
 	fetched_at = excluded.fetched_at,
 	next_refresh_at = excluded.next_refresh_at,
-	comment_count = excluded.comment_count,
+	danmaku_count = excluded.danmaku_count,
 	content_hash = excluded.content_hash,
 	unchanged_streak = excluded.unchanged_streak,
 	version = danmaku_snapshots.version + 1,
@@ -132,7 +132,7 @@ do update set
 		snapshot.PayloadEncoding,
 		snapshot.FetchedAt,
 		snapshot.NextRefreshAt,
-		snapshot.CommentCount,
+		snapshot.DanmakuCount,
 		snapshot.ContentHash,
 		snapshot.UnchangedStreak,
 		snapshot.Version,

@@ -13,8 +13,8 @@ func TestValidatePayloadCountsComments(t *testing.T) {
 		t.Fatalf("ValidatePayload returned error: %v", err)
 	}
 
-	if info.CommentCount != 2 {
-		t.Fatalf("CommentCount = %d", info.CommentCount)
+	if info.DanmakuCount != 2 {
+		t.Fatalf("DanmakuCount = %d", info.DanmakuCount)
 	}
 	if info.ContentHash == "" {
 		t.Fatal("ContentHash is empty")

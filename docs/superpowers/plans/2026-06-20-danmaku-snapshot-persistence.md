@@ -34,7 +34,7 @@
 - Produces refresh settings:
   - `RedisSnapshotTTL time.Duration`
   - `DefaultRefreshInterval time.Duration`
-  - `EmptyCommentsRefreshInterval time.Duration`
+  - `EmptyDanmakuRefreshInterval time.Duration`
   - `RefreshFailureRetryInterval time.Duration`
   - `RefreshQueueSize int`
   - `RefreshWorkerCount int`
@@ -69,7 +69,7 @@
 - [ ] Test valid payload with `count` and `comments` returns comment count.
 - [ ] Test invalid JSON or missing `comments` fails validation.
 - [ ] Test gzip round-trip.
-- [ ] Test empty comments use one-hour refresh and non-empty uses default refresh.
+- [ ] Test empty danmaku use one-hour refresh and non-empty uses default refresh.
 - [ ] Run `go test ./services/danmaku`.
 
 ### Task 3: PostgreSQL Migration And Repository

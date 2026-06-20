@@ -51,7 +51,7 @@ func TestPostgresSnapshotStoreUpsertAndGet(t *testing.T) {
 		PayloadEncoding:     "gzip",
 		FetchedAt:           fetchedAt,
 		NextRefreshAt:       nextRefreshAt,
-		CommentCount:        2,
+		DanmakuCount:        2,
 		ContentHash:         "hash",
 		UnchangedStreak:     0,
 		Version:             1,
@@ -77,8 +77,8 @@ func TestPostgresSnapshotStoreUpsertAndGet(t *testing.T) {
 	if string(got.Payload) != "compressed" {
 		t.Fatalf("Payload = %q", got.Payload)
 	}
-	if got.CommentCount != 2 {
-		t.Fatalf("CommentCount = %d", got.CommentCount)
+	if got.DanmakuCount != 2 {
+		t.Fatalf("DanmakuCount = %d", got.DanmakuCount)
 	}
 }
 
@@ -105,7 +105,7 @@ func TestPostgresSnapshotStoreMarkRefreshError(t *testing.T) {
 		PayloadEncoding:   "gzip",
 		FetchedAt:         fetchedAt,
 		NextRefreshAt:     fetchedAt.Add(24 * time.Hour),
-		CommentCount:      2,
+		DanmakuCount:      2,
 		ContentHash:       "hash",
 		LastRefreshStatus: "success",
 	}

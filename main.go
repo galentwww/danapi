@@ -35,9 +35,9 @@ func main() {
 	}
 
 	refreshPolicy := danmakuService.RefreshPolicy{
-		DefaultRefreshInterval:       config.Config.DefaultRefreshInterval,
-		EmptyCommentsRefreshInterval: config.Config.EmptyCommentsRefreshInterval,
-		RefreshFailureRetryInterval:  config.Config.RefreshFailureRetryInterval,
+		DefaultRefreshInterval:      config.Config.DefaultRefreshInterval,
+		EmptyDanmakuRefreshInterval: config.Config.EmptyDanmakuRefreshInterval,
+		RefreshFailureRetryInterval: config.Config.RefreshFailureRetryInterval,
 	}
 	commentService := danmakuService.NewCommentService(danmakuService.CommentServiceOptions{
 		Cache:              danmakuService.NewRedisSnapshotCache(utils.RedisClient),

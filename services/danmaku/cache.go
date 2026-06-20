@@ -65,7 +65,7 @@ type cacheEnvelope struct {
 	PayloadEncoding     string    `json:"payloadEncoding"`
 	FetchedAt           time.Time `json:"fetchedAt"`
 	NextRefreshAt       time.Time `json:"nextRefreshAt"`
-	CommentCount        int       `json:"commentCount"`
+	DanmakuCount        int       `json:"danmakuCount"`
 	ContentHash         string    `json:"contentHash"`
 	UnchangedStreak     int       `json:"unchangedStreak"`
 	Version             int64     `json:"version"`
@@ -81,7 +81,7 @@ func encodeCacheEnvelope(snapshot *storage.Snapshot) ([]byte, error) {
 		PayloadEncoding:     snapshot.PayloadEncoding,
 		FetchedAt:           snapshot.FetchedAt,
 		NextRefreshAt:       snapshot.NextRefreshAt,
-		CommentCount:        snapshot.CommentCount,
+		DanmakuCount:        snapshot.DanmakuCount,
 		ContentHash:         snapshot.ContentHash,
 		UnchangedStreak:     snapshot.UnchangedStreak,
 		Version:             snapshot.Version,
@@ -102,7 +102,7 @@ func decodeCacheEnvelope(data []byte) (*storage.Snapshot, CacheStatus, error) {
 		PayloadEncoding:     envelope.PayloadEncoding,
 		FetchedAt:           envelope.FetchedAt,
 		NextRefreshAt:       envelope.NextRefreshAt,
-		CommentCount:        envelope.CommentCount,
+		DanmakuCount:        envelope.DanmakuCount,
 		ContentHash:         envelope.ContentHash,
 		UnchangedStreak:     envelope.UnchangedStreak,
 		Version:             envelope.Version,

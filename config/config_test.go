@@ -91,8 +91,8 @@ func TestLoadConfigUsesSnapshotDefaults(t *testing.T) {
 	if Config.DefaultRefreshInterval != 24*time.Hour {
 		t.Fatalf("DefaultRefreshInterval = %v", Config.DefaultRefreshInterval)
 	}
-	if Config.EmptyCommentsRefreshInterval != time.Hour {
-		t.Fatalf("EmptyCommentsRefreshInterval = %v", Config.EmptyCommentsRefreshInterval)
+	if Config.EmptyDanmakuRefreshInterval != time.Hour {
+		t.Fatalf("EmptyDanmakuRefreshInterval = %v", Config.EmptyDanmakuRefreshInterval)
 	}
 	if Config.RefreshFailureRetryInterval != 30*time.Minute {
 		t.Fatalf("RefreshFailureRetryInterval = %v", Config.RefreshFailureRetryInterval)
@@ -102,5 +102,54 @@ func TestLoadConfigUsesSnapshotDefaults(t *testing.T) {
 	}
 	if Config.RefreshWorkerCount != 2 {
 		t.Fatalf("RefreshWorkerCount = %d", Config.RefreshWorkerCount)
+	}
+}
+
+func TestLoadConfigSupportsLegacyEmptyCommentsRefreshInterval(t *testing.T) {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	t.Setenv("EMPTY_COMMENTS_REFRESH_INTERVAL", "7200")
+
+	if err := LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig returned error without .env: %v", err)
+	}
+
+	if Config.EmptyDanmakuRefreshInterval != 2*time.Hour {
+		t.Fatalf("EmptyDanmakuRefreshInterval = %v", Config.EmptyDanmakuRefreshInterval)
+	}
+}
+
+func TestLoadConfigPrefersEmptyDanmakuRefreshInterval(t *testing.T) {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	t.Setenv("EMPTY_COMMENTS_REFRESH_INTERVAL", "7200")
+	t.Setenv("EMPTY_DANMAKU_REFRESH_INTERVAL", "1800")
+
+	if err := LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig returned error without .env: %v", err)
+	}
+
+	if Config.EmptyDanmakuRefreshInterval != 30*time.Minute {
+		t.Fatalf("EmptyDanmakuRefreshInterval = %v", Config.EmptyDanmakuRefreshInterval)
 	}
 }

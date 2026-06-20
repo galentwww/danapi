@@ -60,7 +60,7 @@ create table danmaku_snapshots (
     fetched_at timestamptz not null,
     next_refresh_at timestamptz not null,
 
-    comment_count integer not null default 0,
+    danmaku_count integer not null default 0,
     content_hash text not null,
     unchanged_streak integer not null default 0,
 
@@ -108,7 +108,7 @@ Use fixed first-stage timings:
 ```text
 Redis snapshot TTL: 48h
 Default refresh interval: 24h
-Empty comments refresh interval: 1h
+Empty danmaku refresh interval: 1h
 Refresh failure retry interval: 30m
 Background refresh workers: 2
 Background refresh queue size: 100
@@ -139,7 +139,7 @@ Redis TTL controls only hot-cache residency. It does not determine whether Danda
 2. Inside the singleflight function, check Redis and PostgreSQL again.
 3. If still empty, call DandanPlay.
 4. Validate the response is JSON with a `comments` array.
-5. Compute `comment_count` and `content_hash`.
+5. Compute `danmaku_count` and `content_hash`.
 6. gzip the full JSON response body.
 7. Upsert PostgreSQL first.
 8. Write Redis.

@@ -14,9 +14,9 @@ import (
 
 func testPolicy() RefreshPolicy {
 	return RefreshPolicy{
-		DefaultRefreshInterval:       24 * time.Hour,
-		EmptyCommentsRefreshInterval: time.Hour,
-		RefreshFailureRetryInterval:  30 * time.Minute,
+		DefaultRefreshInterval:      24 * time.Hour,
+		EmptyDanmakuRefreshInterval: time.Hour,
+		RefreshFailureRetryInterval: 30 * time.Minute,
 	}
 }
 
@@ -37,7 +37,7 @@ func compressedSnapshot(t *testing.T, id int64, variantKey string, body []byte, 
 		PayloadEncoding:   "gzip",
 		FetchedAt:         time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC),
 		NextRefreshAt:     nextRefreshAt,
-		CommentCount:      info.CommentCount,
+		DanmakuCount:      info.DanmakuCount,
 		ContentHash:       info.ContentHash,
 		LastRefreshStatus: "success",
 		Version:           1,
