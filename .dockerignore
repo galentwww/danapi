@@ -1,0 +1,15 @@
+.git
+.gitignore
+.DS_Store
+.env
+*.log
+*.tmp
+tmp/
+
+Archive.zip
+dandanplay-middleware
+bin/
+dist/
+
+docs/
+

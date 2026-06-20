@@ -1,0 +1,15 @@
+.DS_Store
+.env
+*.log
+*.tmp
+tmp/
+Archive.zip
+
+# Build outputs
+dandanplay-middleware
+bin/
+dist/
+
+# Editor metadata
+.idea/
+.vscode/

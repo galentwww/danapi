@@ -1,0 +1,43 @@
+services:
+  middleware:
+    build:
+      context: .
+    image: dandanplay-middleware:local
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      DANDANPLAY_BASE_URL: ${DANDANPLAY_BASE_URL:-https://api.dandanplay.net}
+      APP_ID: ${APP_ID:-}
+      APP_SECRET: ${APP_SECRET:-}
+      REDIS_HOST: redis
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      SEARCH_CACHE_DURATION: ${SEARCH_CACHE_DURATION:-3600}
+      DANMAKU_CACHE_DURATION: ${DANMAKU_CACHE_DURATION:-1800}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
+      CORS_ALLOW_METHODS: ${CORS_ALLOW_METHODS:-GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD}
+      CORS_ALLOW_HEADERS: ${CORS_ALLOW_HEADERS:-Origin,Content-Type,Accept,Authorization,X-Requested-With}
+      CORS_EXPOSE_HEADERS: ${CORS_EXPOSE_HEADERS:-}
+      CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-false}
+      CORS_MAX_AGE: ${CORS_MAX_AGE:-86400}
+    ports:
+      - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-data:
