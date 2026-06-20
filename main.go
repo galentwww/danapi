@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"dandanplay-middleware/config"
 	"dandanplay-middleware/handlers"
+	"dandanplay-middleware/services"
+	danmakuService "dandanplay-middleware/services/danmaku"
+	"dandanplay-middleware/storage"
 	"dandanplay-middleware/utils"
 	"github.com/gin-gonic/gin"
 	"log"
@@ -20,6 +24,32 @@ func main() {
 	if err := utils.InitRedis(); err != nil {
 		log.Fatalf("Error connecting to Redis: %v", err)
 	}
+
+	db, err := storage.OpenPostgres(context.Background(), config.Config.DatabaseURL)
+	if err != nil {
+		log.Fatalf("Error connecting to PostgreSQL: %v", err)
+	}
+	defer db.Close()
+	if err := storage.Migrate(context.Background(), db); err != nil {
+		log.Fatalf("Error running database migrations: %v", err)
+	}
+
+	refreshPolicy := danmakuService.RefreshPolicy{
+		DefaultRefreshInterval:       config.Config.DefaultRefreshInterval,
+		EmptyCommentsRefreshInterval: config.Config.EmptyCommentsRefreshInterval,
+		RefreshFailureRetryInterval:  config.Config.RefreshFailureRetryInterval,
+	}
+	commentService := danmakuService.NewCommentService(danmakuService.CommentServiceOptions{
+		Cache:              danmakuService.NewRedisSnapshotCache(utils.RedisClient),
+		Store:              storage.NewPostgresSnapshotStore(db),
+		Upstream:           services.NewDandanplayService(),
+		Policy:             refreshPolicy,
+		RedisSnapshotTTL:   config.Config.RedisSnapshotTTL,
+		RefreshQueueSize:   config.Config.RefreshQueueSize,
+		RefreshWorkerCount: config.Config.RefreshWorkerCount,
+	})
+	defer commentService.Close()
+	handlers.SetCommentService(commentService)
 
 	// 创建Gin路由实例
 	r := gin.Default()

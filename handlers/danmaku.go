@@ -3,7 +3,9 @@ package handlers
 import (
 	"dandanplay-middleware/config"
 	"dandanplay-middleware/services"
+	danmakuService "dandanplay-middleware/services/danmaku"
 	"dandanplay-middleware/utils"
+	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"log"
@@ -12,6 +14,12 @@ import (
 
 // dandanplayService 全局服务实例
 var dandanplayService = services.NewDandanplayService()
+var commentService *danmakuService.CommentService
+
+// SetCommentService 注入弹幕快照服务
+func SetCommentService(service *danmakuService.CommentService) {
+	commentService = service
+}
 
 // EmptyRelatedResponse 空关联数据响应结构
 type EmptyRelatedResponse struct {
@@ -73,6 +81,21 @@ func SearchEpisodes(c *gin.Context) {
 // GetDanmaku 处理获取弹幕的请求
 // 支持缓存弹幕数据
 func GetDanmaku(c *gin.Context) {
+	if commentService != nil {
+		data, err := commentService.GetComments(c.Request.Context(), c.Param("id"), c.Request.URL.Query())
+		if err != nil {
+			log.Printf("弹幕服务请求失败 - ID: %s, Error: %v", c.Param("id"), err)
+			status := http.StatusInternalServerError
+			if errors.Is(err, danmakuService.ErrUpstreamUnavailable) {
+				status = http.StatusServiceUnavailable
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+		c.Data(http.StatusOK, "application/json", data)
+		return
+	}
+
 	id := c.Param("id")
 	query := c.Request.URL.RawQuery
 	cacheKey := fmt.Sprintf("danmaku:%s:%s", id, query)
