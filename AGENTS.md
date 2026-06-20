@@ -9,6 +9,7 @@
   - `GET /api/v2/bangumi/bgmtv/:id`
   - `GET /api/v2/related/:id`
 - Keep `/api/v2/comment/:id` as the frontend compatibility baseline unless the user explicitly approves a routing migration.
+- Current danmaku responses are DandanPlay-compatible JSON objects with `count` and `comments`, not bare arrays.
 - Current cache persistence is Redis only. There is no SQL database, ORM, or migration framework yet.
 - Docker Compose runs `middleware` and `redis`; Redis persists to named volume `dandanplay-newmiddleware-bgmcors_redis-data` under the default project name.
 - The real `.env` is ignored. Use `.env.example` for documented variables.
