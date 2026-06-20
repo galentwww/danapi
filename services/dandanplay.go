@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"dandanplay-middleware/config"
 	"dandanplay-middleware/utils"
 	"fmt"
@@ -58,11 +59,15 @@ func (s *DandanplayService) SearchEpisodes(query string) ([]byte, error) {
 // query: 完整的查询字符串
 // 返回原始JSON响应数据
 func (s *DandanplayService) GetDanmaku(id string, query string) ([]byte, error) {
+	return s.FetchComments(context.Background(), id, query)
+}
+
+func (s *DandanplayService) FetchComments(ctx context.Context, id string, query string) ([]byte, error) {
 	path := fmt.Sprintf("/api/v2/comment/%s", id)
 	url := fmt.Sprintf("%s%s?%s", config.Config.DandanplayBaseURL, path, query)
 
 	// 创建请求
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +87,7 @@ func (s *DandanplayService) GetDanmaku(id string, query string) ([]byte, error) 
 	// 处理302重定向
 	if resp.StatusCode == http.StatusFound {
 		redirectURL := resp.Header.Get("Location")
-		req, err = http.NewRequest("GET", redirectURL, nil)
+		req, err = http.NewRequestWithContext(ctx, "GET", redirectURL, nil)
 		if err != nil {
 			return nil, err
 		}
