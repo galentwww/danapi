@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"strconv"
 	"sync"
@@ -49,6 +50,7 @@ type CommentServiceOptions struct {
 	RedisSnapshotTTL   time.Duration
 	RefreshQueueSize   int
 	RefreshWorkerCount int
+	DecisionLog        bool
 	Now                func() time.Time
 }
 
@@ -64,6 +66,7 @@ type CommentService struct {
 	refreshQueue     chan refreshRequest
 	refreshMu        sync.Mutex
 	refreshPending   map[string]struct{}
+	decisionLog      bool
 	closeOnce        sync.Once
 	cancel           context.CancelFunc
 }
@@ -93,6 +96,7 @@ func NewCommentService(options CommentServiceOptions) *CommentService {
 		now:              now,
 		refreshQueue:     make(chan refreshRequest, queueSize),
 		refreshPending:   make(map[string]struct{}),
+		decisionLog:      options.DecisionLog,
 		cancel:           cancel,
 	}
 	for i := 0; i < options.RefreshWorkerCount; i++ {
@@ -126,9 +130,9 @@ func (s *CommentService) GetComments(ctx context.Context, dandanEpisodeID string
 		if !snapshot.NextRefreshAt.After(s.now()) {
 			_ = s.cache.Delete(ctx, episodeID, variantKey)
 			s.enqueueRefresh(episodeID, dandanEpisodeID, variant)
-			return commentResult(payload, "stale", snapshot), nil
+			return s.resultWithLog(episodeID, payload, "stale", snapshot), nil
 		}
-		return commentResult(payload, "redis", snapshot), nil
+		return s.resultWithLog(episodeID, payload, "redis", snapshot), nil
 	}
 
 	snapshot, err := s.store.Get(ctx, episodeID, variantKey)
@@ -140,10 +144,10 @@ func (s *CommentService) GetComments(ctx context.Context, dandanEpisodeID string
 		s.recordAccess(ctx, episodeID, variantKey)
 		if !snapshot.NextRefreshAt.After(s.now()) {
 			s.enqueueRefresh(episodeID, dandanEpisodeID, variant)
-			return commentResult(payload, "stale", snapshot), nil
+			return s.resultWithLog(episodeID, payload, "stale", snapshot), nil
 		}
 		_ = s.cache.Set(ctx, snapshot, s.redisSnapshotTTL)
-		return commentResult(payload, "postgres", snapshot), nil
+		return s.resultWithLog(episodeID, payload, "postgres", snapshot), nil
 	}
 	if !errors.Is(err, storage.ErrSnapshotNotFound) {
 		return nil, err
@@ -165,7 +169,7 @@ func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episode
 			if !snapshot.NextRefreshAt.After(s.now()) {
 				status = "stale"
 			}
-			return commentResult(payload, status, snapshot), nil
+			return s.resultWithLog(episodeID, payload, status, snapshot), nil
 		}
 		if snapshot, err := s.store.Get(ctx, episodeID, variant.Key()); err == nil {
 			payload, err := snapshotPayload(snapshot)
@@ -180,7 +184,7 @@ func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episode
 			} else {
 				_ = s.cache.Set(ctx, snapshot, s.redisSnapshotTTL)
 			}
-			return commentResult(payload, status, snapshot), nil
+			return s.resultWithLog(episodeID, payload, status, snapshot), nil
 		} else if !errors.Is(err, storage.ErrSnapshotNotFound) {
 			return nil, err
 		}
@@ -197,7 +201,7 @@ func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episode
 			return nil, err
 		}
 		_ = s.cache.Set(ctx, snapshot, s.redisSnapshotTTL)
-		return commentResult(payload, "upstream", snapshot), nil
+		return s.resultWithLog(episodeID, payload, "upstream", snapshot), nil
 	})
 	if err != nil {
 		return nil, err
@@ -208,6 +212,7 @@ func (s *CommentService) firstLoad(ctx context.Context, episodeID int64, episode
 func (s *CommentService) enqueueRefresh(episodeID int64, episodeIDString string, variant Variant) {
 	key := refreshKey(episodeID, variant.Key())
 	if !s.markRefreshPending(key) {
+		s.logDecision("danmaku refresh suppressed episode_id=%d variant_key=%s reason=duplicate_refresh_pending", episodeID, variant.Key())
 		return
 	}
 	request := refreshRequest{
@@ -217,8 +222,10 @@ func (s *CommentService) enqueueRefresh(episodeID int64, episodeIDString string,
 	}
 	select {
 	case s.refreshQueue <- request:
+		s.logDecision("danmaku refresh queued episode_id=%d variant_key=%s", episodeID, variant.Key())
 	default:
 		s.clearRefreshPending(key)
+		s.logDecision("danmaku refresh skipped episode_id=%d variant_key=%s reason=refresh_queue_full", episodeID, variant.Key())
 	}
 }
 
@@ -240,6 +247,7 @@ func (s *CommentService) refresh(ctx context.Context, request refreshRequest) {
 	_, _, _ = s.refreshGroup.Do(key, func() (interface{}, error) {
 		snapshot, err := s.store.Get(ctx, request.dandanEpisodeID, request.variant.Key())
 		if err == nil && snapshot.NextRefreshAt.After(s.now()) {
+			s.logDecision("danmaku refresh skipped episode_id=%d variant_key=%s reason=snapshot_already_fresh next_refresh_at=%s", request.dandanEpisodeID, request.variant.Key(), snapshot.NextRefreshAt.UTC().Format(time.RFC3339))
 			return nil, nil
 		}
 		if err != nil && !errors.Is(err, storage.ErrSnapshotNotFound) {
@@ -249,17 +257,20 @@ func (s *CommentService) refresh(ctx context.Context, request refreshRequest) {
 		payload, err := s.upstream.FetchComments(ctx, request.episodeIDString, request.variant.UpstreamQuery())
 		if err != nil {
 			_ = s.store.MarkRefreshError(ctx, request.dandanEpisodeID, request.variant.Key(), s.policy.RefreshFailureRetryAt(s.now()), err.Error())
+			s.logDecision("danmaku refresh failed episode_id=%d variant_key=%s rule=refresh_failed_retry retry_at=%s error=%v", request.dandanEpisodeID, request.variant.Key(), s.policy.RefreshFailureRetryAt(s.now()).UTC().Format(time.RFC3339), err)
 			return nil, err
 		}
 		snapshot, err = s.snapshotFromPayload(request.dandanEpisodeID, request.variant.Key(), payload, snapshot)
 		if err != nil {
 			_ = s.store.MarkRefreshError(ctx, request.dandanEpisodeID, request.variant.Key(), s.policy.RefreshFailureRetryAt(s.now()), err.Error())
+			s.logDecision("danmaku refresh failed episode_id=%d variant_key=%s rule=refresh_failed_retry retry_at=%s error=%v", request.dandanEpisodeID, request.variant.Key(), s.policy.RefreshFailureRetryAt(s.now()).UTC().Format(time.RFC3339), err)
 			return nil, err
 		}
 		if err := s.store.Upsert(ctx, snapshot); err != nil {
 			return nil, err
 		}
 		_ = s.cache.Set(ctx, snapshot, s.redisSnapshotTTL)
+		s.logDecision("danmaku refresh stored episode_id=%d variant_key=%s fetched_at=%s next_refresh_at=%s", request.dandanEpisodeID, request.variant.Key(), snapshot.FetchedAt.UTC().Format(time.RFC3339), snapshot.NextRefreshAt.UTC().Format(time.RFC3339))
 		return nil, nil
 	})
 }
@@ -316,6 +327,16 @@ func (s *CommentService) snapshotFromPayload(episodeID int64, variantKey string,
 		recentAccessWindowStartedAt = previous.RecentAccessWindowStartedAt
 	}
 	decision := s.policy.NextRefreshDecision(now, context)
+	s.logDecision(
+		"danmaku refresh decision episode_id=%d variant_key=%s rule=%s danmaku_count=%d recent_access_count=%d unchanged_streak=%d next_refresh_at=%s",
+		episodeID,
+		variantKey,
+		decision.Rule,
+		info.DanmakuCount,
+		recentAccessCount,
+		decision.UnchangedStreak,
+		decision.NextRefreshAt.UTC().Format(time.RFC3339),
+	)
 	return &storage.Snapshot{
 		DandanEpisodeID:             episodeID,
 		VariantKey:                  variantKey,
@@ -333,6 +354,26 @@ func (s *CommentService) snapshotFromPayload(episodeID int64, variantKey string,
 		RecentAccessCount:           recentAccessCount,
 		RecentAccessWindowStartedAt: recentAccessWindowStartedAt,
 	}, nil
+}
+
+func (s *CommentService) resultWithLog(episodeID int64, payload []byte, cacheStatus string, snapshot *storage.Snapshot) *CommentResult {
+	result := commentResult(payload, cacheStatus, snapshot)
+	s.logDecision(
+		"danmaku request resolved episode_id=%d variant_key=%s source=%s fetched_at=%s next_refresh_at=%s",
+		episodeID,
+		result.VariantKey,
+		result.CacheStatus,
+		result.FetchedAt.UTC().Format(time.RFC3339),
+		result.NextRefreshAt.UTC().Format(time.RFC3339),
+	)
+	return result
+}
+
+func (s *CommentService) logDecision(format string, args ...interface{}) {
+	if !s.decisionLog {
+		return
+	}
+	log.Printf(format, args...)
 }
 
 func snapshotPayload(snapshot *storage.Snapshot) ([]byte, error) {

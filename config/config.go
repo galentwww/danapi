@@ -13,19 +13,22 @@ import (
 // Configuration 配置结构体
 // 包含所有应用程序需要的配置项
 type Configuration struct {
-	DandanplayBaseURL       string                 // 弹弹Play API的基础URL
-	RedisHost               string                 // Redis服务器地址
-	RedisPort               string                 // Redis服务器端口
-	RedisPassword           string                 // Redis密码
-	RedisDB                 int                    // Redis数据库编号
-	ServerPort              string                 // 服务器监听端口
-	SearchCacheDuration     time.Duration          // 搜索结果的缓存时间
-	DanmakuCacheDuration    time.Duration          // 弹幕数据的缓存时间
-	AppId                   string                 // API鉴权AppId
-	AppSecret               string                 // API鉴权AppSecret
-	DandanplayCredentials   []DandanplayCredential // 弹弹Play API鉴权凭据列表
-	DandanplayCredentialLog bool                   // 是否记录上游凭据选择日志
-	DatabaseURL             string                 // PostgreSQL连接字符串
+	DandanplayBaseURL        string                 // 弹弹Play API的基础URL
+	RedisHost                string                 // Redis服务器地址
+	RedisPort                string                 // Redis服务器端口
+	RedisPassword            string                 // Redis密码
+	RedisDB                  int                    // Redis数据库编号
+	ServerPort               string                 // 服务器监听端口
+	SearchCacheDuration      time.Duration          // 搜索结果的缓存时间
+	DanmakuCacheDuration     time.Duration          // 弹幕数据的缓存时间
+	AppId                    string                 // API鉴权AppId
+	AppSecret                string                 // API鉴权AppSecret
+	DandanplayCredentials    []DandanplayCredential // 弹弹Play API鉴权凭据列表
+	DandanplayCredentialLog  bool                   // 是否记录上游凭据选择日志
+	DanmakuDecisionLog       bool                   // 是否记录弹幕命中来源和刷新规则日志
+	DatabaseURL              string                 // PostgreSQL连接字符串
+	DatabaseReadOnlyUser     string                 // PostgreSQL只读账号
+	DatabaseReadOnlyPassword string                 // PostgreSQL只读账号密码
 
 	// 弹幕快照刷新配置
 	RedisSnapshotTTL             time.Duration // Redis热快照驻留时间
@@ -168,19 +171,22 @@ func LoadConfig() error {
 	}
 
 	Config = Configuration{
-		DandanplayBaseURL:       os.Getenv("DANDANPLAY_BASE_URL"),
-		RedisHost:               os.Getenv("REDIS_HOST"),
-		RedisPort:               os.Getenv("REDIS_PORT"),
-		RedisPassword:           os.Getenv("REDIS_PASSWORD"),
-		RedisDB:                 getEnvInt("REDIS_DB", 0),
-		ServerPort:              os.Getenv("SERVER_PORT"),
-		SearchCacheDuration:     parseDuration("SEARCH_CACHE_DURATION", 1*time.Hour),     // 默认1小时
-		DanmakuCacheDuration:    parseDuration("DANMAKU_CACHE_DURATION", 30*time.Minute), // 默认30分钟
-		AppId:                   appID,
-		AppSecret:               appSecret,
-		DandanplayCredentials:   credentials,
-		DandanplayCredentialLog: getEnvBool("DANDANPLAY_CREDENTIAL_LOG", false),
-		DatabaseURL:             os.Getenv("DATABASE_URL"),
+		DandanplayBaseURL:        os.Getenv("DANDANPLAY_BASE_URL"),
+		RedisHost:                os.Getenv("REDIS_HOST"),
+		RedisPort:                os.Getenv("REDIS_PORT"),
+		RedisPassword:            os.Getenv("REDIS_PASSWORD"),
+		RedisDB:                  getEnvInt("REDIS_DB", 0),
+		ServerPort:               os.Getenv("SERVER_PORT"),
+		SearchCacheDuration:      parseDuration("SEARCH_CACHE_DURATION", 1*time.Hour),     // 默认1小时
+		DanmakuCacheDuration:     parseDuration("DANMAKU_CACHE_DURATION", 30*time.Minute), // 默认30分钟
+		AppId:                    appID,
+		AppSecret:                appSecret,
+		DandanplayCredentials:    credentials,
+		DandanplayCredentialLog:  getEnvBool("DANDANPLAY_CREDENTIAL_LOG", false),
+		DanmakuDecisionLog:       getEnvBool("DANMAKU_DECISION_LOG", false),
+		DatabaseURL:              os.Getenv("DATABASE_URL"),
+		DatabaseReadOnlyUser:     strings.TrimSpace(os.Getenv("DATABASE_READONLY_USER")),
+		DatabaseReadOnlyPassword: strings.TrimSpace(os.Getenv("DATABASE_READONLY_PASSWORD")),
 
 		RedisSnapshotTTL:             parseDuration("REDIS_SNAPSHOT_TTL", 48*time.Hour),
 		DefaultRefreshInterval:       parseDuration("DEFAULT_REFRESH_INTERVAL", 24*time.Hour),

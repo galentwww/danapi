@@ -60,6 +60,8 @@ APP_SECRET=your_app_secret
 DANDANPLAY_KEYS=app_id_1:app_secret_1,app_id_2:app_secret_2
 # 可选，记录选中的凭据序号和脱敏 AppID，不记录 AppSecret
 DANDANPLAY_CREDENTIAL_LOG=false
+# 可选，记录弹幕命中来源和刷新规则决策
+DANMAKU_DECISION_LOG=false
 Redis配置
 REDIS_HOST=localhost
 REDIS_PORT=6379
@@ -69,7 +71,11 @@ PostgreSQL配置
 POSTGRES_DB=dandanplay_middleware
 POSTGRES_USER=middleware
 POSTGRES_PASSWORD=middleware_password
+POSTGRES_BIND_ADDRESS=127.0.0.1
+POSTGRES_PORT=15432
 DATABASE_URL=postgres://middleware:middleware_password@postgres:5432/dandanplay_middleware?sslmode=disable
+DATABASE_READONLY_USER=middleware_readonly
+DATABASE_READONLY_PASSWORD=readonly_password_change_me
 服务器配置
 SERVER_PORT=8080
 缓存时间配置（秒）
@@ -134,14 +140,24 @@ ghcr.io/galentwww/danapi:sha-<short-sha>
 
    `DANDANPLAY_KEYS` 设置后会优先于单组 `APP_ID` / `APP_SECRET`；未设置时保持原单 key 行为。
    调试轮换时可以临时设置 `DANDANPLAY_CREDENTIAL_LOG=true`，日志只会输出 `credential_index` 和脱敏后的 `app_id`，不会输出 `AppSecret`。
+   排查弹幕快照时可以临时设置 `DANMAKU_DECISION_LOG=true`，日志会输出 `episode_id`、`variant_key`、命中来源和刷新规则，不输出弹幕正文。
 
    Compose 默认会把中间件连接到内置 Redis 和 PostgreSQL 服务：
    ```bash
    REDIS_HOST=redis
    REDIS_PORT=6379
    DATABASE_URL=postgres://middleware:middleware_password@postgres:5432/dandanplay_middleware?sslmode=disable
+   DATABASE_READONLY_USER=middleware_readonly
+   DATABASE_READONLY_PASSWORD=readonly_password_change_me
+   POSTGRES_BIND_ADDRESS=127.0.0.1
+   POSTGRES_PORT=15432
    SERVER_PORT=8080
+   GIN_MODE=release
    ```
+   PostgreSQL 默认只映射到宿主机 `127.0.0.1:15432`，方便本机工具连接但不直接暴露公网。需要远程访问时再显式设置 `POSTGRES_BIND_ADDRESS=0.0.0.0`，并务必修改 `DATABASE_READONLY_PASSWORD`。
+   如果 `DATABASE_URL` 指向外部 PostgreSQL，且中间件连接账号没有创建角色权限，可以留空 `DATABASE_READONLY_USER` 和 `DATABASE_READONLY_PASSWORD`，然后在外部数据库中手工创建只读账号。
+
+   宝塔面板部署可以直接使用 `docker-compose.baota.yml`。该文件不依赖 `.env`，把可编辑配置直接放在 `middleware.environment` 中；部署前至少填写 `DANDANPLAY_KEYS`，或填写单组 `APP_ID` / `APP_SECRET`。
 
 3. 拉取镜像并启动：
    ```bash
@@ -152,6 +168,38 @@ ghcr.io/galentwww/danapi:sha-<short-sha>
 4. 查看日志：
    ```bash
    docker compose logs -f middleware
+   ```
+
+   Uptime Kuma 建议监控就绪检查接口：
+   ```text
+   GET http://你的域名或IP:8080/readyz
+   ```
+   `/readyz` 会检查 Redis 和 PostgreSQL，都正常才返回 200。`/healthz` 只表示中间件进程存活。
+
+   如果需要用网页查看 PostgreSQL，可以临时启动 Adminer：
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.adminer.yml up -d adminer
+   ```
+   然后访问 `http://你的域名或IP:8081`，连接信息如下：
+   ```text
+   System: PostgreSQL
+   Server: postgres
+   Username: middleware_readonly
+   Password: readonly_password_change_me
+   Database: dandanplay_middleware
+   ```
+
+   也可以直接进容器使用 `psql`：
+   ```bash
+   docker compose exec postgres psql -U middleware -d dandanplay_middleware
+   ```
+   外部工具建议使用只读账号连接宿主机端口：
+   ```text
+   Host: 127.0.0.1
+   Port: 15432
+   Database: dandanplay_middleware
+   Username: middleware_readonly
+   Password: readonly_password_change_me
    ```
 
 5. 停止服务：
@@ -208,6 +256,7 @@ MIDDLEWARE_IMAGE=dandanplay-middleware:local docker compose up -d
   - `X-Danmaku-Variant`: 当前 `variant_key`
   - `X-Danmaku-Fetched-At`: 快照获取时间
   - `X-Danmaku-Next-Refresh-At`: 下一次允许刷新时间
+- 设置 `DANMAKU_DECISION_LOG=true` 后，服务日志会记录弹幕请求命中来源和刷新规则，例如 `hot_changed`、`hot_unchanged`、`normal_changed`、`stable_unchanged`、`archived_unchanged`、`empty_danmaku`、`refresh_failed_retry`。日志不会输出弹幕正文。
 
 #### 方式二：使用预编译的二进制文件
 1. 下载对应平台的二进制文件

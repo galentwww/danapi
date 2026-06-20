@@ -30,6 +30,7 @@ func TestLoadConfigUsesEnvironmentWhenDotEnvIsMissing(t *testing.T) {
 	t.Setenv("APP_ID", "app-id")
 	t.Setenv("APP_SECRET", "app-secret")
 	t.Setenv("DANDANPLAY_CREDENTIAL_LOG", "true")
+	t.Setenv("DANMAKU_DECISION_LOG", "true")
 	t.Setenv("CORS_ALLOW_ORIGINS", "https://example.test")
 	t.Setenv("CORS_ALLOW_CREDENTIALS", "true")
 	t.Setenv("CORS_MAX_AGE", "600")
@@ -73,6 +74,9 @@ func TestLoadConfigUsesEnvironmentWhenDotEnvIsMissing(t *testing.T) {
 	}
 	if !Config.DandanplayCredentialLog {
 		t.Fatal("DandanplayCredentialLog = false")
+	}
+	if !Config.DanmakuDecisionLog {
+		t.Fatal("DanmakuDecisionLog = false")
 	}
 }
 
@@ -142,6 +146,8 @@ func TestLoadConfigUsesSnapshotDefaults(t *testing.T) {
 	})
 
 	t.Setenv("DATABASE_URL", "postgres://middleware:secret@postgres:5432/dandanplay_middleware?sslmode=disable")
+	t.Setenv("DATABASE_READONLY_USER", "middleware_readonly")
+	t.Setenv("DATABASE_READONLY_PASSWORD", "readonly-secret")
 
 	if err := LoadConfig(); err != nil {
 		t.Fatalf("LoadConfig returned error without .env: %v", err)
@@ -149,6 +155,12 @@ func TestLoadConfigUsesSnapshotDefaults(t *testing.T) {
 
 	if Config.DatabaseURL != "postgres://middleware:secret@postgres:5432/dandanplay_middleware?sslmode=disable" {
 		t.Fatalf("DatabaseURL = %q", Config.DatabaseURL)
+	}
+	if Config.DatabaseReadOnlyUser != "middleware_readonly" {
+		t.Fatalf("DatabaseReadOnlyUser = %q", Config.DatabaseReadOnlyUser)
+	}
+	if Config.DatabaseReadOnlyPassword != "readonly-secret" {
+		t.Fatalf("DatabaseReadOnlyPassword = %q", Config.DatabaseReadOnlyPassword)
 	}
 	if Config.RedisSnapshotTTL != 48*time.Hour {
 		t.Fatalf("RedisSnapshotTTL = %v", Config.RedisSnapshotTTL)
@@ -170,6 +182,9 @@ func TestLoadConfigUsesSnapshotDefaults(t *testing.T) {
 	}
 	if Config.DandanplayCredentialLog {
 		t.Fatal("DandanplayCredentialLog = true")
+	}
+	if Config.DanmakuDecisionLog {
+		t.Fatal("DanmakuDecisionLog = true")
 	}
 	if Config.RefreshAccessWindow != 24*time.Hour {
 		t.Fatalf("RefreshAccessWindow = %v", Config.RefreshAccessWindow)

@@ -33,6 +33,12 @@ func main() {
 	if err := storage.Migrate(context.Background(), db); err != nil {
 		log.Fatalf("Error running database migrations: %v", err)
 	}
+	if err := storage.EnsureReadOnlyRole(context.Background(), db, storage.ReadOnlyRoleOptions{
+		User:     config.Config.DatabaseReadOnlyUser,
+		Password: config.Config.DatabaseReadOnlyPassword,
+	}); err != nil {
+		log.Fatalf("Error ensuring PostgreSQL read-only role: %v", err)
+	}
 
 	refreshPolicy := danmakuService.RefreshPolicy{
 		DefaultRefreshInterval:       config.Config.DefaultRefreshInterval,
@@ -54,9 +60,18 @@ func main() {
 		RedisSnapshotTTL:   config.Config.RedisSnapshotTTL,
 		RefreshQueueSize:   config.Config.RefreshQueueSize,
 		RefreshWorkerCount: config.Config.RefreshWorkerCount,
+		DecisionLog:        config.Config.DanmakuDecisionLog,
 	})
 	defer commentService.Close()
 	handlers.SetCommentService(commentService)
+	handlers.SetHealthChecks(
+		func(ctx context.Context) error {
+			return utils.RedisClient.Ping(ctx).Err()
+		},
+		func(ctx context.Context) error {
+			return db.Ping(ctx)
+		},
+	)
 
 	// 创建Gin路由实例
 	r := gin.Default()
@@ -66,6 +81,8 @@ func main() {
 
 	// 注册API路由
 	// 保持与弹弹Play API相同的路由结构
+	r.GET("/healthz", handlers.Healthz)                                     // 进程存活检查
+	r.GET("/readyz", handlers.Readyz)                                       // Redis 和 PostgreSQL 就绪检查
 	r.GET("/api/v2/search/episodes", handlers.SearchEpisodes)               // 搜索剧集
 	r.GET("/api/v2/comment/:id", handlers.GetDanmaku)                       // 获取弹幕
 	r.GET("/api/v2/bangumi/bgmtv/:id", handlers.GetBangumiByBgmtvSubjectID) // 通过Bangumi.tv subjectId获取番剧详情

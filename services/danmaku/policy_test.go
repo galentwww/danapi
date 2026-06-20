@@ -64,6 +64,9 @@ func TestNextRefreshDecisionUsesEmptyDanmakuInterval(t *testing.T) {
 	if !decision.NextRefreshAt.Equal(now.Add(time.Hour)) {
 		t.Fatalf("NextRefreshAt = %s", decision.NextRefreshAt)
 	}
+	if decision.Rule != "empty_danmaku" {
+		t.Fatalf("Rule = %q", decision.Rule)
+	}
 	if decision.UnchangedStreak != 0 {
 		t.Fatalf("UnchangedStreak = %d", decision.UnchangedStreak)
 	}
@@ -81,6 +84,9 @@ func TestNextRefreshDecisionUsesHotChangedInterval(t *testing.T) {
 
 	if !decision.NextRefreshAt.Equal(now.Add(2 * time.Hour)) {
 		t.Fatalf("NextRefreshAt = %s", decision.NextRefreshAt)
+	}
+	if decision.Rule != "hot_changed" {
+		t.Fatalf("Rule = %q", decision.Rule)
 	}
 	if decision.UnchangedStreak != 0 {
 		t.Fatalf("UnchangedStreak = %d", decision.UnchangedStreak)
@@ -101,6 +107,9 @@ func TestNextRefreshDecisionUsesHotUnchangedInterval(t *testing.T) {
 	if !decision.NextRefreshAt.Equal(now.Add(6 * time.Hour)) {
 		t.Fatalf("NextRefreshAt = %s", decision.NextRefreshAt)
 	}
+	if decision.Rule != "hot_unchanged" {
+		t.Fatalf("Rule = %q", decision.Rule)
+	}
 	if decision.UnchangedStreak != 2 {
 		t.Fatalf("UnchangedStreak = %d", decision.UnchangedStreak)
 	}
@@ -119,6 +128,9 @@ func TestNextRefreshDecisionUsesNormalChangedInterval(t *testing.T) {
 	if !decision.NextRefreshAt.Equal(now.Add(12 * time.Hour)) {
 		t.Fatalf("NextRefreshAt = %s", decision.NextRefreshAt)
 	}
+	if decision.Rule != "normal_changed" {
+		t.Fatalf("Rule = %q", decision.Rule)
+	}
 }
 
 func TestNextRefreshDecisionUsesNormalUnchangedInterval(t *testing.T) {
@@ -134,6 +146,9 @@ func TestNextRefreshDecisionUsesNormalUnchangedInterval(t *testing.T) {
 
 	if !decision.NextRefreshAt.Equal(now.Add(24 * time.Hour)) {
 		t.Fatalf("NextRefreshAt = %s", decision.NextRefreshAt)
+	}
+	if decision.Rule != "normal_unchanged" {
+		t.Fatalf("Rule = %q", decision.Rule)
 	}
 	if decision.UnchangedStreak != 1 {
 		t.Fatalf("UnchangedStreak = %d", decision.UnchangedStreak)
@@ -160,11 +175,17 @@ func TestNextRefreshDecisionUsesStableIntervalsForUnchangedStreaks(t *testing.T)
 	if !three.NextRefreshAt.Equal(now.Add(72 * time.Hour)) {
 		t.Fatalf("three NextRefreshAt = %s", three.NextRefreshAt)
 	}
+	if three.Rule != "stable_unchanged" {
+		t.Fatalf("three Rule = %q", three.Rule)
+	}
 	if three.UnchangedStreak != 3 {
 		t.Fatalf("three UnchangedStreak = %d", three.UnchangedStreak)
 	}
 	if !seven.NextRefreshAt.Equal(now.Add(168 * time.Hour)) {
 		t.Fatalf("seven NextRefreshAt = %s", seven.NextRefreshAt)
+	}
+	if seven.Rule != "archived_unchanged" {
+		t.Fatalf("seven Rule = %q", seven.Rule)
 	}
 	if seven.UnchangedStreak != 7 {
 		t.Fatalf("seven UnchangedStreak = %d", seven.UnchangedStreak)

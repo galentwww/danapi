@@ -32,6 +32,7 @@ type RefreshContext struct {
 type RefreshDecision struct {
 	NextRefreshAt   time.Time
 	UnchangedStreak int
+	Rule            string
 }
 
 func (p RefreshPolicy) NextRefreshDecision(now time.Time, context RefreshContext) RefreshDecision {
@@ -41,33 +42,34 @@ func (p RefreshPolicy) NextRefreshDecision(now time.Time, context RefreshContext
 		unchangedStreak = context.PreviousUnchangedStreak + 1
 	}
 
-	interval := p.refreshInterval(context, changed, unchangedStreak)
+	interval, rule := p.refreshInterval(context, changed, unchangedStreak)
 	return RefreshDecision{
 		NextRefreshAt:   now.Add(interval),
 		UnchangedStreak: unchangedStreak,
+		Rule:            rule,
 	}
 }
 
-func (p RefreshPolicy) refreshInterval(context RefreshContext, changed bool, unchangedStreak int) time.Duration {
+func (p RefreshPolicy) refreshInterval(context RefreshContext, changed bool, unchangedStreak int) (time.Duration, string) {
 	if context.Info.DanmakuCount == 0 {
-		return p.emptyDanmakuRefreshInterval()
+		return p.emptyDanmakuRefreshInterval(), "empty_danmaku"
 	}
 	if unchangedStreak >= 7 {
-		return p.archivedRefreshInterval()
+		return p.archivedRefreshInterval(), "archived_unchanged"
 	}
 	if unchangedStreak >= 3 {
-		return p.stableRefreshInterval()
+		return p.stableRefreshInterval(), "stable_unchanged"
 	}
 	if p.isHot(context.RecentAccessCount) {
 		if changed {
-			return p.hotChangedRefreshInterval()
+			return p.hotChangedRefreshInterval(), "hot_changed"
 		}
-		return p.hotUnchangedRefreshInterval()
+		return p.hotUnchangedRefreshInterval(), "hot_unchanged"
 	}
 	if changed {
-		return p.normalChangedRefreshInterval()
+		return p.normalChangedRefreshInterval(), "normal_changed"
 	}
-	return p.defaultRefreshInterval()
+	return p.defaultRefreshInterval(), "normal_unchanged"
 }
 
 func (p RefreshPolicy) RefreshFailureRetryAt(now time.Time) time.Time {

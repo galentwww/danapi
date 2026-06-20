@@ -13,12 +13,16 @@ services:
       APP_SECRET: ${APP_SECRET:-}
       DANDANPLAY_KEYS: ${DANDANPLAY_KEYS:-}
       DANDANPLAY_CREDENTIAL_LOG: ${DANDANPLAY_CREDENTIAL_LOG:-false}
+      DANMAKU_DECISION_LOG: ${DANMAKU_DECISION_LOG:-false}
       DATABASE_URL: ${DATABASE_URL:-postgres://middleware:middleware_password@postgres:5432/dandanplay_middleware?sslmode=disable}
+      DATABASE_READONLY_USER: ${DATABASE_READONLY_USER:-middleware_readonly}
+      DATABASE_READONLY_PASSWORD: ${DATABASE_READONLY_PASSWORD:-readonly_password_change_me}
       REDIS_HOST: redis
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
       SERVER_PORT: ${SERVER_PORT:-8080}
+      GIN_MODE: ${GIN_MODE:-release}
       SEARCH_CACHE_DURATION: ${SEARCH_CACHE_DURATION:-3600}
       DANMAKU_CACHE_DURATION: ${DANMAKU_CACHE_DURATION:-1800}
       REDIS_SNAPSHOT_TTL: ${REDIS_SNAPSHOT_TTL:-172800}
@@ -42,6 +46,11 @@ services:
       CORS_MAX_AGE: ${CORS_MAX_AGE:-86400}
     ports:
       - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${SERVER_PORT:-8080}/readyz >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   redis:
     image: redis:7-alpine
@@ -64,6 +73,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-middleware_password}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-15432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s

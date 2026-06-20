@@ -1,10 +1,13 @@
 package danmaku
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
 	"net/url"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -47,6 +50,51 @@ func compressedSnapshot(t *testing.T, id int64, variantKey string, body []byte, 
 		ContentHash:       info.ContentHash,
 		LastRefreshStatus: "success",
 		Version:           1,
+	}
+}
+
+func TestCommentServiceDecisionLogIncludesRequestSource(t *testing.T) {
+	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	body := []byte(`{"count":1,"comments":[{"cid":1,"p":"0.00,1,16777215,abc","m":"one"}]}`)
+	cache := &fakeSnapshotCache{
+		getSnapshot: compressedSnapshot(t, 123, "v1|withRelated=1", body, now.Add(time.Hour)),
+		getStatus:   CacheHit,
+	}
+	store := &fakeSnapshotStore{}
+	upstream := &fakeUpstreamClient{}
+	var logBuffer bytes.Buffer
+	originalWriter := log.Writer()
+	log.SetOutput(&logBuffer)
+	t.Cleanup(func() {
+		log.SetOutput(originalWriter)
+	})
+	service := NewCommentService(CommentServiceOptions{
+		Cache:              cache,
+		Store:              store,
+		Upstream:           upstream,
+		Policy:             testPolicy(),
+		RedisSnapshotTTL:   48 * time.Hour,
+		RefreshQueueSize:   10,
+		RefreshWorkerCount: 0,
+		Now:                func() time.Time { return now },
+		DecisionLog:        true,
+	})
+
+	if _, err := service.GetComments(context.Background(), "123", mustQuery(t, "withRelated=true")); err != nil {
+		t.Fatalf("GetComments returned error: %v", err)
+	}
+
+	output := logBuffer.String()
+	for _, want := range []string{
+		"danmaku request resolved",
+		"episode_id=123",
+		"variant_key=v1|withRelated=1",
+		"source=redis",
+		"next_refresh_at=2026-06-20T11:00:00Z",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("log output missing %q: %q", want, output)
+		}
 	}
 }
 
