@@ -28,6 +28,7 @@
 - 支持的API端点：
   - `/api/v2/search/episodes` - 搜索剧集
   - `/api/v2/comment/{id}` - 获取弹幕
+  - `/api/v2/bangumi/bgmtv/{id}` - 通过 Bangumi.tv subjectId 获取番剧详情
   - `/api/v2/related/{id}` - 兼容旧版本（返回空数据）
 - Redis缓存支持
 - 独立配置的缓存时间
@@ -53,11 +54,19 @@ Redis配置
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
+REDIS_DB=0
 服务器配置
 SERVER_PORT=8080
 缓存时间配置（秒）
 SEARCH_CACHE_DURATION= # 搜索结果缓存
 DANMAKU_CACHE_DURATION= # 弹幕数据缓存
+CORS配置
+CORS_ALLOW_ORIGINS=*
+CORS_ALLOW_METHODS=GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD
+CORS_ALLOW_HEADERS=Origin,Content-Type,Accept,Authorization,X-Requested-With
+CORS_EXPOSE_HEADERS=
+CORS_ALLOW_CREDENTIALS=false
+CORS_MAX_AGE=86400
 ```
 
 
@@ -98,7 +107,13 @@ DANMAKU_CACHE_DURATION= # 弹幕数据缓存
    docker compose down
    ```
 
-   Redis 数据会保存在 Docker 命名卷 `dandanplay-newmiddleware-bgm-cors_redis-data`（实际前缀取决于目录名）。如果需要删除缓存数据：
+   Redis 数据会保存在 Docker 命名卷中。当前目录下的默认卷名是 `dandanplay-newmiddleware-bgmcors_redis-data`；实际前缀取决于 Compose 项目名。可以用以下命令查看：
+   ```bash
+   docker compose config --volumes
+   docker volume inspect dandanplay-newmiddleware-bgmcors_redis-data
+   ```
+
+   如果需要删除缓存数据：
    ```bash
    docker compose down -v
    ```
