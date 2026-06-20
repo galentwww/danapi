@@ -55,6 +55,10 @@ DANDANPLAY_BASE_URL=
 API鉴权配置
 APP_ID=your_app_id
 APP_SECRET=your_app_secret
+# 可选，多组凭据轮换；设置后优先于 APP_ID/APP_SECRET
+DANDANPLAY_KEYS=app_id_1:app_secret_1,app_id_2:app_secret_2
+# 可选，记录选中的凭据序号和脱敏 AppID，不记录 AppSecret
+DANDANPLAY_CREDENTIAL_LOG=false
 Redis配置
 REDIS_HOST=localhost
 REDIS_PORT=6379
@@ -114,6 +118,14 @@ ghcr.io/galentwww/danapi:sha-<short-sha>
    APP_ID=your_app_id
    APP_SECRET=your_app_secret
    ```
+
+   如果需要预留或启用多账号轮换，可以改用：
+   ```bash
+   DANDANPLAY_KEYS=app_id_1:app_secret_1,app_id_2:app_secret_2
+   ```
+
+   `DANDANPLAY_KEYS` 设置后会优先于单组 `APP_ID` / `APP_SECRET`；未设置时保持原单 key 行为。
+   调试轮换时可以临时设置 `DANDANPLAY_CREDENTIAL_LOG=true`，日志只会输出 `credential_index` 和脱敏后的 `app_id`，不会输出 `AppSecret`。
 
    Compose 默认会把中间件连接到内置 Redis 和 PostgreSQL 服务：
    ```bash

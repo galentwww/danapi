@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -12,17 +13,19 @@ import (
 // Configuration 配置结构体
 // 包含所有应用程序需要的配置项
 type Configuration struct {
-	DandanplayBaseURL    string        // 弹弹Play API的基础URL
-	RedisHost            string        // Redis服务器地址
-	RedisPort            string        // Redis服务器端口
-	RedisPassword        string        // Redis密码
-	RedisDB              int           // Redis数据库编号
-	ServerPort           string        // 服务器监听端口
-	SearchCacheDuration  time.Duration // 搜索结果的缓存时间
-	DanmakuCacheDuration time.Duration // 弹幕数据的缓存时间
-	AppId                string        // API鉴权AppId
-	AppSecret            string        // API鉴权AppSecret
-	DatabaseURL          string        // PostgreSQL连接字符串
+	DandanplayBaseURL       string                 // 弹弹Play API的基础URL
+	RedisHost               string                 // Redis服务器地址
+	RedisPort               string                 // Redis服务器端口
+	RedisPassword           string                 // Redis密码
+	RedisDB                 int                    // Redis数据库编号
+	ServerPort              string                 // 服务器监听端口
+	SearchCacheDuration     time.Duration          // 搜索结果的缓存时间
+	DanmakuCacheDuration    time.Duration          // 弹幕数据的缓存时间
+	AppId                   string                 // API鉴权AppId
+	AppSecret               string                 // API鉴权AppSecret
+	DandanplayCredentials   []DandanplayCredential // 弹弹Play API鉴权凭据列表
+	DandanplayCredentialLog bool                   // 是否记录上游凭据选择日志
+	DatabaseURL             string                 // PostgreSQL连接字符串
 
 	// 弹幕快照刷新配置
 	RedisSnapshotTTL            time.Duration // Redis热快照驻留时间
@@ -39,6 +42,12 @@ type Configuration struct {
 	CORSExposeHeaders    string // 暴露给浏览器的响应头，多个用英文逗号分隔
 	CORSAllowCredentials bool   // 是否允许携带 Cookie/凭证
 	CORSMaxAge           int    // 预检请求结果缓存秒数
+}
+
+// DandanplayCredential is one AppId/AppSecret pair used for upstream signing.
+type DandanplayCredential struct {
+	AppID     string
+	AppSecret string
 }
 
 // Config 全局配置实例
@@ -96,6 +105,45 @@ func getEnvInt(env string, defaultValue int) int {
 	return defaultValue
 }
 
+func parseDandanplayCredentials(keys string, legacyAppID string, legacyAppSecret string) ([]DandanplayCredential, error) {
+	keys = strings.TrimSpace(keys)
+	if keys == "" {
+		if strings.TrimSpace(legacyAppID) != "" && strings.TrimSpace(legacyAppSecret) != "" {
+			return []DandanplayCredential{{
+				AppID:     strings.TrimSpace(legacyAppID),
+				AppSecret: strings.TrimSpace(legacyAppSecret),
+			}}, nil
+		}
+		return nil, nil
+	}
+
+	parts := strings.Split(keys, ",")
+	credentials := make([]DandanplayCredential, 0, len(parts))
+	for i, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		pair := strings.SplitN(part, ":", 2)
+		if len(pair) != 2 {
+			return nil, fmt.Errorf("invalid DANDANPLAY_KEYS entry %d: expected app_id:app_secret", i+1)
+		}
+		appID := strings.TrimSpace(pair[0])
+		appSecret := strings.TrimSpace(pair[1])
+		if appID == "" || appSecret == "" {
+			return nil, fmt.Errorf("invalid DANDANPLAY_KEYS entry %d: app_id and app_secret are required", i+1)
+		}
+		credentials = append(credentials, DandanplayCredential{
+			AppID:     appID,
+			AppSecret: appSecret,
+		})
+	}
+	if len(credentials) == 0 {
+		return nil, fmt.Errorf("DANDANPLAY_KEYS did not contain any credentials")
+	}
+	return credentials, nil
+}
+
 // LoadConfig 从.env文件加载配置
 // 设置全局Config变量
 func LoadConfig() error {
@@ -105,18 +153,27 @@ func LoadConfig() error {
 		}
 	}
 
+	appID := os.Getenv("APP_ID")
+	appSecret := os.Getenv("APP_SECRET")
+	credentials, err := parseDandanplayCredentials(os.Getenv("DANDANPLAY_KEYS"), appID, appSecret)
+	if err != nil {
+		return err
+	}
+
 	Config = Configuration{
-		DandanplayBaseURL:    os.Getenv("DANDANPLAY_BASE_URL"),
-		RedisHost:            os.Getenv("REDIS_HOST"),
-		RedisPort:            os.Getenv("REDIS_PORT"),
-		RedisPassword:        os.Getenv("REDIS_PASSWORD"),
-		RedisDB:              getEnvInt("REDIS_DB", 0),
-		ServerPort:           os.Getenv("SERVER_PORT"),
-		SearchCacheDuration:  parseDuration("SEARCH_CACHE_DURATION", 1*time.Hour),     // 默认1小时
-		DanmakuCacheDuration: parseDuration("DANMAKU_CACHE_DURATION", 30*time.Minute), // 默认30分钟
-		AppId:                os.Getenv("APP_ID"),
-		AppSecret:            os.Getenv("APP_SECRET"),
-		DatabaseURL:          os.Getenv("DATABASE_URL"),
+		DandanplayBaseURL:       os.Getenv("DANDANPLAY_BASE_URL"),
+		RedisHost:               os.Getenv("REDIS_HOST"),
+		RedisPort:               os.Getenv("REDIS_PORT"),
+		RedisPassword:           os.Getenv("REDIS_PASSWORD"),
+		RedisDB:                 getEnvInt("REDIS_DB", 0),
+		ServerPort:              os.Getenv("SERVER_PORT"),
+		SearchCacheDuration:     parseDuration("SEARCH_CACHE_DURATION", 1*time.Hour),     // 默认1小时
+		DanmakuCacheDuration:    parseDuration("DANMAKU_CACHE_DURATION", 30*time.Minute), // 默认30分钟
+		AppId:                   appID,
+		AppSecret:               appSecret,
+		DandanplayCredentials:   credentials,
+		DandanplayCredentialLog: getEnvBool("DANDANPLAY_CREDENTIAL_LOG", false),
+		DatabaseURL:             os.Getenv("DATABASE_URL"),
 
 		RedisSnapshotTTL:            parseDuration("REDIS_SNAPSHOT_TTL", 48*time.Hour),
 		DefaultRefreshInterval:      parseDuration("DEFAULT_REFRESH_INTERVAL", 24*time.Hour),

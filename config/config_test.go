@@ -29,6 +29,7 @@ func TestLoadConfigUsesEnvironmentWhenDotEnvIsMissing(t *testing.T) {
 	t.Setenv("DANMAKU_CACHE_DURATION", "60")
 	t.Setenv("APP_ID", "app-id")
 	t.Setenv("APP_SECRET", "app-secret")
+	t.Setenv("DANDANPLAY_CREDENTIAL_LOG", "true")
 	t.Setenv("CORS_ALLOW_ORIGINS", "https://example.test")
 	t.Setenv("CORS_ALLOW_CREDENTIALS", "true")
 	t.Setenv("CORS_MAX_AGE", "600")
@@ -60,6 +61,70 @@ func TestLoadConfigUsesEnvironmentWhenDotEnvIsMissing(t *testing.T) {
 	}
 	if Config.CORSMaxAge != 600 {
 		t.Fatalf("CORSMaxAge = %d", Config.CORSMaxAge)
+	}
+	if len(Config.DandanplayCredentials) != 1 {
+		t.Fatalf("DandanplayCredentials len = %d", len(Config.DandanplayCredentials))
+	}
+	if Config.DandanplayCredentials[0].AppID != "app-id" {
+		t.Fatalf("DandanplayCredentials[0].AppID = %q", Config.DandanplayCredentials[0].AppID)
+	}
+	if Config.DandanplayCredentials[0].AppSecret != "app-secret" {
+		t.Fatalf("DandanplayCredentials[0].AppSecret = %q", Config.DandanplayCredentials[0].AppSecret)
+	}
+	if !Config.DandanplayCredentialLog {
+		t.Fatal("DandanplayCredentialLog = false")
+	}
+}
+
+func TestLoadConfigParsesDandanplayKeys(t *testing.T) {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	t.Setenv("APP_ID", "legacy-id")
+	t.Setenv("APP_SECRET", "legacy-secret")
+	t.Setenv("DANDANPLAY_KEYS", "app-a:secret-a, app-b:secret-b")
+
+	if err := LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig returned error: %v", err)
+	}
+
+	if len(Config.DandanplayCredentials) != 2 {
+		t.Fatalf("DandanplayCredentials len = %d", len(Config.DandanplayCredentials))
+	}
+	if Config.DandanplayCredentials[0].AppID != "app-a" || Config.DandanplayCredentials[0].AppSecret != "secret-a" {
+		t.Fatalf("first credential = %#v", Config.DandanplayCredentials[0])
+	}
+	if Config.DandanplayCredentials[1].AppID != "app-b" || Config.DandanplayCredentials[1].AppSecret != "secret-b" {
+		t.Fatalf("second credential = %#v", Config.DandanplayCredentials[1])
+	}
+}
+
+func TestLoadConfigRejectsMalformedDandanplayKeys(t *testing.T) {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	t.Setenv("DANDANPLAY_KEYS", "app-a-secret-a")
+
+	if err := LoadConfig(); err == nil {
+		t.Fatal("LoadConfig returned nil for malformed DANDANPLAY_KEYS")
 	}
 }
 
@@ -102,6 +167,9 @@ func TestLoadConfigUsesSnapshotDefaults(t *testing.T) {
 	}
 	if Config.RefreshWorkerCount != 2 {
 		t.Fatalf("RefreshWorkerCount = %d", Config.RefreshWorkerCount)
+	}
+	if Config.DandanplayCredentialLog {
+		t.Fatal("DandanplayCredentialLog = true")
 	}
 }
 

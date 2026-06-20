@@ -11,6 +11,8 @@ services:
       DANDANPLAY_BASE_URL: ${DANDANPLAY_BASE_URL:-https://api.dandanplay.net}
       APP_ID: ${APP_ID:-}
       APP_SECRET: ${APP_SECRET:-}
+      DANDANPLAY_KEYS: ${DANDANPLAY_KEYS:-}
+      DANDANPLAY_CREDENTIAL_LOG: ${DANDANPLAY_CREDENTIAL_LOG:-false}
       DATABASE_URL: ${DATABASE_URL:-postgres://middleware:middleware_password@postgres:5432/dandanplay_middleware?sslmode=disable}
       REDIS_HOST: redis
       REDIS_PORT: ${REDIS_PORT:-6379}

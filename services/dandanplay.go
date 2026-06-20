@@ -6,16 +6,25 @@ import (
 	"dandanplay-middleware/utils"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"time"
 )
 
 // DandanplayService 弹弹Play API服务
 type DandanplayService struct {
-	client *http.Client // HTTP客户端，配置为不自动跟随重定向
+	client             *http.Client // HTTP客户端，配置为不自动跟随重定向
+	credentialProvider utils.CredentialProvider
 }
 
 // NewDandanplayService 创建新的弹弹Play服务实例
 func NewDandanplayService() *DandanplayService {
+	return NewDandanplayServiceWithCredentialProvider(
+		utils.NewRoundRobinCredentialProvider(config.Config.DandanplayCredentials),
+	)
+}
+
+func NewDandanplayServiceWithCredentialProvider(provider utils.CredentialProvider) *DandanplayService {
 	return &DandanplayService{
 		client: &http.Client{
 			// 禁用自动重定向，以便我们可以手动处理302响应
@@ -23,6 +32,7 @@ func NewDandanplayService() *DandanplayService {
 				return http.ErrUseLastResponse
 			},
 		},
+		credentialProvider: provider,
 	}
 }
 
@@ -39,10 +49,9 @@ func (s *DandanplayService) SearchEpisodes(query string) ([]byte, error) {
 		return nil, err
 	}
 
+	credential := s.nextCredential()
 	// 添加鉴权头
-	for key, value := range utils.GenerateAuthHeaders(path) {
-		req.Header.Set(key, value)
-	}
+	s.setAuthHeaders(req, path, credential.Credential)
 
 	// 发送请求
 	resp, err := s.client.Do(req)
@@ -72,10 +81,9 @@ func (s *DandanplayService) FetchComments(ctx context.Context, id string, query 
 		return nil, err
 	}
 
+	credential := s.nextCredential()
 	// 添加鉴权头
-	for key, value := range utils.GenerateAuthHeaders(path) {
-		req.Header.Set(key, value)
-	}
+	s.setAuthHeaders(req, path, credential.Credential)
 
 	// 发送请求
 	resp, err := s.client.Do(req)
@@ -93,9 +101,7 @@ func (s *DandanplayService) FetchComments(ctx context.Context, id string, query 
 		}
 
 		// 重定向的URL也需要添加鉴权头
-		for key, value := range utils.GenerateAuthHeaders(path) {
-			req.Header.Set(key, value)
-		}
+		s.setAuthHeaders(req, path, credential.Credential)
 
 		resp, err = s.client.Do(req)
 		if err != nil {
@@ -119,9 +125,8 @@ func (s *DandanplayService) GetBangumiByBgmtvSubjectID(id string) ([]byte, error
 		return nil, err
 	}
 
-	for key, value := range utils.GenerateAuthHeaders(path) {
-		req.Header.Set(key, value)
-	}
+	credential := s.nextCredential()
+	s.setAuthHeaders(req, path, credential.Credential)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -130,4 +135,38 @@ func (s *DandanplayService) GetBangumiByBgmtvSubjectID(id string) ([]byte, error
 	defer resp.Body.Close()
 
 	return io.ReadAll(resp.Body)
+}
+
+func (s *DandanplayService) nextCredential() utils.CredentialSelection {
+	if s.credentialProvider == nil {
+		selection := utils.CredentialSelection{
+			Credential: config.DandanplayCredential{
+				AppID:     config.Config.AppId,
+				AppSecret: config.Config.AppSecret,
+			},
+			Index: 0,
+		}
+		s.logCredentialSelection(selection)
+		return selection
+	}
+	selection := s.credentialProvider.Next()
+	s.logCredentialSelection(selection)
+	return selection
+}
+
+func (s *DandanplayService) setAuthHeaders(req *http.Request, path string, credential config.DandanplayCredential) {
+	for key, value := range utils.GenerateAuthHeadersForCredential(path, time.Now().Unix(), credential) {
+		req.Header.Set(key, value)
+	}
+}
+
+func (s *DandanplayService) logCredentialSelection(selection utils.CredentialSelection) {
+	if !config.Config.DandanplayCredentialLog {
+		return
+	}
+	log.Printf(
+		"DandanPlay credential selected - credential_index=%d app_id=%s",
+		selection.Index+1,
+		utils.MaskCredentialAppID(selection.Credential.AppID),
+	)
 }
