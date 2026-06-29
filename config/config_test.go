@@ -80,6 +80,28 @@ func TestLoadConfigUsesEnvironmentWhenDotEnvIsMissing(t *testing.T) {
 	}
 }
 
+func TestLoadConfigDefaultsDandanplayBaseURL(t *testing.T) {
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	if err := LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig returned error without .env: %v", err)
+	}
+
+	if Config.DandanplayBaseURL != "https://api.dandanplay.net" {
+		t.Fatalf("DandanplayBaseURL = %q", Config.DandanplayBaseURL)
+	}
+}
+
 func TestLoadConfigParsesDandanplayKeys(t *testing.T) {
 	originalDir, err := os.Getwd()
 	if err != nil {

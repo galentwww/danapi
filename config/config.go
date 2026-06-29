@@ -171,7 +171,7 @@ func LoadConfig() error {
 	}
 
 	Config = Configuration{
-		DandanplayBaseURL:        os.Getenv("DANDANPLAY_BASE_URL"),
+		DandanplayBaseURL:        getEnvDefault("DANDANPLAY_BASE_URL", "https://api.dandanplay.net"),
 		RedisHost:                os.Getenv("REDIS_HOST"),
 		RedisPort:                os.Getenv("REDIS_PORT"),
 		RedisPassword:            os.Getenv("REDIS_PASSWORD"),
